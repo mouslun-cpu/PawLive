@@ -19,11 +19,11 @@ const COLORS = [
 
 const W = 800;
 const H = 460;
-const PAD = { top: 55, right: 55, bottom: 65, left: 55 };
+const PAD = { top: 75, right: 75, bottom: 85, left: 75 }; // Increased padding to prevent clipping of large bubbles
 const CW = W - PAD.left - PAD.right; // chart width
 const CH = H - PAD.top - PAD.bottom; // chart height
-const BASE_R = 34;
-const MAX_R = 76;
+const BASE_R = 30; // Slightly reduced to allow more room
+const MAX_R = 60;  // Reduced from 76 to prevent excessive overlap and clipping
 
 export default function PackedBubbleChart({ data }: { data: EnergyMapData[] }) {
     const [selected, setSelected] = useState<EnergyMapData | null>(null);
