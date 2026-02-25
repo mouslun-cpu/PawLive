@@ -1,0 +1,165 @@
+﻿[36mvite v7.3.1 [32mbuilding client environment for production...[36m[39m
+transforming...
+node.exe : Error: Cann
+ot apply unknown utili
+ty class `bg-slate-950
+`. Are you using CSS m
+odules or similar and 
+missing `@reference`? 
+https://tailwindcss.co
+m/docs/functions-and-d
+irectives#reference-di
+rective
+位於 線路:1 字元:1
++ & "C:\Program Files\
+nodejs/node.exe" "C:\P
+rogram Files\nodejs/no
+de_mo ...
++ ~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: (Error: Can   
+ not a...rence-dir    
+ective:String) []    ,
+ RemoteException
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 
+    at onInvalidCandid
+ate (C:\Users\weilu\De
+sktop\SideProject\OneQ
+\node_modules\tailwind
+css\dist\lib.js:21:131
+4)
+    at Ee (C:\Users\we
+ilu\Desktop\SideProjec
+t\OneQ\node_modules\ta
+ilwindcss\dist\lib.js:
+16:37066)
+    at C:\Users\weilu\
+Desktop\SideProject\On
+eQ\node_modules\tailwi
+ndcss\dist\lib.js:21:3
+55
+    at Pr (C:\Users\we
+ilu\Desktop\SideProjec
+t\OneQ\node_modules\ta
+ilwindcss\dist\lib.js:
+3:1733)
+    at _ (C:\Users\wei
+lu\Desktop\SideProject
+\OneQ\node_modules\tai
+lwindcss\dist\lib.js:3
+:1377)
+    at Te (C:\Users\we
+ilu\Desktop\SideProjec
+t\OneQ\node_modules\ta
+ilwindcss\dist\lib.js:
+21:172)
+    at pn (C:\Users\we
+ilu\Desktop\SideProjec
+t\OneQ\node_modules\ta
+ilwindcss\dist\lib.js:
+38:294)
+    at async dn (C:\Us
+ers\weilu\Desktop\Side
+Project\OneQ\node_modu
+les\tailwindcss\dist\l
+ib.js:38:631)
+    at async Xr (C:\Us
+ers\weilu\Desktop\Side
+Project\OneQ\node_modu
+les\@tailwindcss\node\
+dist\index.js:10:3417)
+    at async N (C:\Use
+rs\weilu\Desktop\SideP
+roject\OneQ\node_modul
+es\@tailwindcss\postcs
+s\dist\index.js:10:397
+9)
+[32m✓[39m 19 modules transformed.
+[31m✗[39m Build fail
+ed in 360ms
+[31merror during buil
+d:
+[31m[vite:css] [postc
+ss] tailwindcss: C:/Us
+ers/weilu/Desktop/Side
+Project/OneQ/src/index
+.css:1:1: Cannot apply
+ unknown utility class
+ `bg-slate-950`. Are y
+ou using CSS modules o
+r similar and missing 
+`@reference`? https://
+tailwindcss.com/docs/f
+unctions-and-directive
+s#reference-directive
+[31m
+file: [36mC:/Users/we
+ilu/Desktop/SideProjec
+t/OneQ/src/index.css:1
+:0[31m
+    at Input.error (C:
+\Users\weilu\Desktop\S
+ideProject\OneQ\node_m
+odules\postcss\lib\inp
+ut.js:135:16)
+    at Root.error (C:\
+Users\weilu\Desktop\Si
+deProject\OneQ\node_mo
+dules\postcss\lib\node
+.js:146:32)
+    at Object.Once (C:
+\Users\weilu\Desktop\S
+ideProject\OneQ\node_m
+odules\@tailwindcss\po
+stcss\dist\index.js:10
+:6913)
+    at async LazyResul
+t.runAsync (C:\Users\w
+eilu\Desktop\SideProje
+ct\OneQ\node_modules\p
+ostcss\lib\lazy-result
+.js:293:11)
+    at async runPostCS
+S (file:///C:/Users/we
+ilu/Desktop/SideProjec
+t/OneQ/node_modules/vi
+te/dist/node/chunks/co
+nfig.js:30145:19)
+    at async compilePo
+stCSS (file:///C:/User
+s/weilu/Desktop/SidePr
+oject/OneQ/node_module
+s/vite/dist/node/chunk
+s/config.js:30129:6)
+    at async compileCS
+S (file:///C:/Users/we
+ilu/Desktop/SideProjec
+t/OneQ/node_modules/vi
+te/dist/node/chunks/co
+nfig.js:30059:26)
+    at async Object.ha
+ndler (file:///C:/User
+s/weilu/Desktop/SidePr
+oject/OneQ/node_module
+s/vite/dist/node/chunk
+s/config.js:29592:54)
+    at async transform
+ (file:///C:/Users/wei
+lu/Desktop/SideProject
+/OneQ/node_modules/rol
+lup/dist/es/shared/nod
+e-entry.js:21246:16)
+    at async ModuleLoa
+der.addModuleSource (f
+ile:///C:/Users/weilu/
+Desktop/SideProject/On
+eQ/node_modules/rollup
+/dist/es/shared/node-e
+ntry.js:21474:36)[39m

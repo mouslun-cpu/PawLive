@@ -1,0 +1,25 @@
+Error: Cannot apply unknown utility class `shadow-[0_0_20px_rgba(99,`
+    at onInvalidCandidate (C:\Users\weilu\Desktop\SideProject\OneQ\node_modules\tailwindcss\dist\lib.js:21:1511)
+    at Ee (C:\Users\weilu\Desktop\SideProject\OneQ\node_modules\tailwindcss\dist\lib.js:16:36740)
+    at C:\Users\weilu\Desktop\SideProject\OneQ\node_modules\tailwindcss\dist\lib.js:21:355
+    at Pr (C:\Users\weilu\Desktop\SideProject\OneQ\node_modules\tailwindcss\dist\lib.js:3:1733)
+    at _ (C:\Users\weilu\Desktop\SideProject\OneQ\node_modules\tailwindcss\dist\lib.js:3:1377)
+    at Te (C:\Users\weilu\Desktop\SideProject\OneQ\node_modules\tailwindcss\dist\lib.js:21:172)
+    at pn (C:\Users\weilu\Desktop\SideProject\OneQ\node_modules\tailwindcss\dist\lib.js:38:294)
+    at async dn (C:\Users\weilu\Desktop\SideProject\OneQ\node_modules\tailwindcss\dist\lib.js:38:631)
+    at async Xr (C:\Users\weilu\Desktop\SideProject\OneQ\node_modules\@tailwindcss\node\dist\index.js:10:3417)
+    at async N (C:\Users\weilu\Desktop\SideProject\OneQ\node_modules\@tailwindcss\postcss\dist\index.js:10:3979)
+[31m✗[39m Build failed in 1.34s
+[31merror during build:
+[31m[vite:css] [postcss] tailwindcss: C:/Users/weilu/Desktop/SideProject/OneQ/src/index.css:1:1: Cannot apply unknown utility class `shadow-[0_0_20px_rgba(99,`[31m
+file: [36mC:/Users/weilu/Desktop/SideProject/OneQ/src/index.css:1:0[31m
+    at Input.error (C:\Users\weilu\Desktop\SideProject\OneQ\node_modules\postcss\lib\input.js:135:16)
+    at Root.error (C:\Users\weilu\Desktop\SideProject\OneQ\node_modules\postcss\lib\node.js:146:32)
+    at Object.Once (C:\Users\weilu\Desktop\SideProject\OneQ\node_modules\@tailwindcss\postcss\dist\index.js:10:6913)
+    at async LazyResult.runAsync (C:\Users\weilu\Desktop\SideProject\OneQ\node_modules\postcss\lib\lazy-result.js:293:11)
+    at async runPostCSS (file:///C:/Users/weilu/Desktop/SideProject/OneQ/node_modules/vite/dist/node/chunks/config.js:30145:19)
+    at async compilePostCSS (file:///C:/Users/weilu/Desktop/SideProject/OneQ/node_modules/vite/dist/node/chunks/config.js:30129:6)
+    at async compileCSS (file:///C:/Users/weilu/Desktop/SideProject/OneQ/node_modules/vite/dist/node/chunks/config.js:30059:26)
+    at async Object.handler (file:///C:/Users/weilu/Desktop/SideProject/OneQ/node_modules/vite/dist/node/chunks/config.js:29592:54)
+    at async transform (file:///C:/Users/weilu/Desktop/SideProject/OneQ/node_modules/rollup/dist/es/shared/node-entry.js:21246:16)
+    at async ModuleLoader.addModuleSource (file:///C:/Users/weilu/Desktop/SideProject/OneQ/node_modules/rollup/dist/es/shared/node-entry.js:21474:36)[39m
