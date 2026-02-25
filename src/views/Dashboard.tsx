@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db, ensureAuth } from '../lib/firebase';
-import { doc, setDoc, getDoc, deleteDoc, collection, getDocs, query, orderBy } from 'firebase/firestore';
-import { Plus, Trash2, Library, Lock, ChevronRight } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
+import { Trash2, Library, Lock, ChevronRight } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).substring(2, 8);
 

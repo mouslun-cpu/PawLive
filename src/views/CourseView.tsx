@@ -65,12 +65,22 @@ export default function CourseView() {
     }, [activeTab, classrooms, allMessages.length]);
 
     const statData = useMemo(() => {
-        const stats: Record<string, { id: string, name: string, value: number, messages: any[] }> = {};
+        const stats: Record<string, { id: string, name: string, value: number, messages: any[], messageCount: number, voteCount: number, spotlightCount: number, pollParticipationRate: number }> = {};
         allMessages.forEach(m => {
             if (!stats[m.uid]) {
-                stats[m.uid] = { id: m.uid, name: m.senderName, value: 0, messages: [] };
+                stats[m.uid] = {
+                    id: m.uid,
+                    name: m.senderName,
+                    value: 0,
+                    messages: [],
+                    messageCount: 0,
+                    voteCount: 0,
+                    spotlightCount: 0,
+                    pollParticipationRate: 0
+                };
             }
             stats[m.uid].value += 1;
+            stats[m.uid].messageCount += 1;
             stats[m.uid].messages.push(m);
         });
         return Object.values(stats);
