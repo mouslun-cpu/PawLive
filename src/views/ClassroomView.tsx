@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { db, ensureAuth } from '../lib/firebase';
 import { doc, onSnapshot, updateDoc, setDoc, collection, query, orderBy, limit, getDocs, deleteDoc, increment } from 'firebase/firestore';
 import { QRCodeSVG } from 'qrcode.react';
-import { ArrowLeft, Play, X, MessageSquare, Plus, Trash2, StopCircle, Maximize2, Copy, Check, PauseCircle, RotateCcw, BarChart2, Power, PowerOff, Users, ListFilter } from 'lucide-react';
+import { ArrowLeft, Play, X, MessageSquare, Plus, Trash2, StopCircle, Maximize2, Copy, Check, PauseCircle, RotateCcw, BarChart2, Power, PowerOff, Users, ListFilter, Edit2 } from 'lucide-react';
 import ParticleCanvas from '../components/ParticleCanvas';
 import PackedBubbleChart from '../components/PackedBubbleChart';
 import type { EnergyMapData } from '../components/PackedBubbleChart';
@@ -25,6 +25,8 @@ export default function ClassroomView() {
     // UI States
     const [pollTitle, setPollTitle] = useState('');
     const [pollOptions, setPollOptions] = useState([{ id: generateId(), text: '' }, { id: generateId(), text: '' }]);
+    const [isMultipleChoice, setIsMultipleChoice] = useState(false);
+    const [editingPollId, setEditingPollId] = useState<string | null>(null);
     const [focusedMessage, setFocusedMessage] = useState<any>(null);
     const [isQrModalOpen, setIsQrModalOpen] = useState(false);
     const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
@@ -77,7 +79,11 @@ export default function ClassroomView() {
                         const counts: Record<string, number> = {};
                         vSnap.docs.forEach(d => {
                             const opt = d.data().selectedOption;
-                            counts[opt] = (counts[opt] || 0) + 1;
+                            if (Array.isArray(opt)) {
+                                opt.forEach((o: any) => counts[o] = (counts[o] || 0) + 1);
+                            } else {
+                                counts[opt] = (counts[opt] || 0) + 1;
+                            }
                         });
                         setPollVotes({ counts, total: vSnap.docs.length });
                     });
@@ -136,23 +142,52 @@ export default function ClassroomView() {
     const handleRemoveOption = (id: string) => setPollOptions(pollOptions.filter(o => o.id !== id));
     const handleOptionChange = (id: string, text: string) => setPollOptions(pollOptions.map(o => o.id === id ? { ...o, text } : o));
 
-    const createPoll = async () => {
+    const savePoll = async () => {
         if (!pollTitle.trim() || pollOptions.some(o => !o.text.trim()) || !classroomId) return;
         try {
             await ensureAuth();
-            const pollId = generateId();
             const optionsArray = pollOptions.map(o => o.text);
-            await setDoc(doc(db, `classrooms/${classroomId}/polls/${pollId}`), {
+            const pollData = {
                 question: pollTitle,
                 options: optionsArray,
-                status: 'draft',
-                createdAt: Date.now()
-            });
-            await setDoc(doc(db, 'stats', pollId), { counts: {}, total: 0 });
+                isMultipleChoice,
+            };
+
+            if (editingPollId) {
+                await updateDoc(doc(db, `classrooms/${classroomId}/polls/${editingPollId}`), pollData);
+            } else {
+                const pollId = generateId();
+                await setDoc(doc(db, `classrooms/${classroomId}/polls/${pollId}`), {
+                    ...pollData,
+                    status: 'draft',
+                    createdAt: Date.now()
+                });
+                await setDoc(doc(db, 'stats', pollId), { counts: {}, total: 0 });
+            }
+
+            // reset form
             setPollTitle('');
             setPollOptions([{ id: generateId(), text: '' }, { id: generateId(), text: '' }]);
+            setIsMultipleChoice(false);
+            setEditingPollId(null);
             setActiveSidebarTab('list');
-        } catch (error) { console.error("Failed to create poll", error); }
+        } catch (error) { console.error("Failed to save poll", error); }
+    };
+
+    const handleEditPoll = (poll: any) => {
+        setPollTitle(poll.question);
+        setPollOptions(poll.options.map((text: string) => ({ id: generateId(), text })));
+        setIsMultipleChoice(poll.isMultipleChoice || false);
+        setEditingPollId(poll.id);
+        setActiveSidebarTab('create');
+    };
+
+    const handleDeletePoll = async (pollId: string) => {
+        if (!classroomId || !confirm('Delete this poll?')) return;
+        try {
+            await deleteDoc(doc(db, `classrooms/${classroomId}/polls/${pollId}`));
+            await deleteDoc(doc(db, 'stats', pollId));
+        } catch (error) { console.error("Failed to delete poll", error); }
     };
 
     const activatePoll = async (pollId: string) => {
@@ -276,10 +311,10 @@ export default function ClassroomView() {
                             {/* Chat Mode Sidebar: Poll Creation Form & Stats */}
                             <div className="flex flex-col flex-1 min-h-0">
                                 <div className="flex border-b border-white/5 bg-slate-900/40 p-2 shrink-0">
-                                    <button onClick={() => setActiveSidebarTab('create')} className={cn("flex-1 py-2 text-sm font-bold rounded-lg transition-colors", activeSidebarTab === 'create' ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300")}>
+                                    <button onClick={() => { setActiveSidebarTab('create'); setEditingPollId(null); setPollTitle(''); setPollOptions([{ id: generateId(), text: '' }, { id: generateId(), text: '' }]); setIsMultipleChoice(false); }} className={cn("flex-1 py-2 text-sm font-bold rounded-lg transition-colors", activeSidebarTab === 'create' && !editingPollId ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300")}>
                                         <Plus size={16} className="inline mr-1" /> New Poll
                                     </button>
-                                    <button onClick={() => setActiveSidebarTab('list')} className={cn("flex-1 py-2 text-sm font-bold rounded-lg transition-colors", activeSidebarTab === 'list' ? "bg-white/10 text-emerald-400" : "text-slate-500 hover:text-slate-300")}>
+                                    <button onClick={() => setActiveSidebarTab('list')} className={cn("flex-1 py-2 text-sm font-bold rounded-lg transition-colors", activeSidebarTab === 'list' || editingPollId ? "bg-white/10 text-emerald-400" : "text-slate-500 hover:text-slate-300")}>
                                         <ListFilter size={16} className="inline mr-1" /> Saved ({pollsList.length})
                                     </button>
                                 </div>
@@ -321,13 +356,31 @@ export default function ClassroomView() {
                                                     </button>
                                                 )}
 
+                                                <div className="flex items-center justify-between px-2 py-1 mt-2">
+                                                    <span className="text-sm font-bold text-slate-300">Multiple Choice</span>
+                                                    <button
+                                                        onClick={() => setIsMultipleChoice(!isMultipleChoice)}
+                                                        className={cn("w-12 h-6 rounded-full transition-colors relative", isMultipleChoice ? "bg-indigo-500" : "bg-slate-700")}
+                                                    >
+                                                        <div className={cn("w-4 h-4 rounded-full bg-white absolute top-1 transition-transform", isMultipleChoice ? "translate-x-7" : "translate-x-1")} />
+                                                    </button>
+                                                </div>
+
                                                 <button
-                                                    onClick={createPoll}
+                                                    onClick={savePoll}
                                                     disabled={!pollTitle.trim() || pollOptions.some(o => !o.text.trim())}
                                                     className="w-full mt-4 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white font-bold py-3 rounded-xl shadow-lg shadow-indigo-500/20 transition-all flex justify-center items-center gap-2"
                                                 >
-                                                    <Check size={16} /> Save to Poll List
+                                                    <Check size={16} /> {editingPollId ? 'Update Poll' : 'Save to Poll List'}
                                                 </button>
+                                                {editingPollId && (
+                                                    <button
+                                                        onClick={() => { setEditingPollId(null); setPollTitle(''); setPollOptions([{ id: generateId(), text: '' }, { id: generateId(), text: '' }]); setIsMultipleChoice(false); setActiveSidebarTab('list'); }}
+                                                        className="w-full mt-2 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-xl transition-all flex justify-center items-center gap-2"
+                                                    >
+                                                        Cancel Edit
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     ) : (
@@ -336,8 +389,19 @@ export default function ClassroomView() {
                                                 <p className="text-center text-slate-500 text-sm mt-10">No polls saved yet.</p>
                                             ) : (
                                                 pollsList.map(p => (
-                                                    <div key={p.id} className="bg-slate-800/50 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
-                                                        <h4 className="font-bold text-slate-200 text-sm">{p.question}</h4>
+                                                    <div key={p.id} className="bg-slate-800/50 border border-white/5 rounded-xl p-4 flex flex-col gap-3 group/poll relative">
+                                                        <div className="absolute top-2 right-2 opacity-0 group-hover/poll:opacity-100 transition-opacity flex gap-1">
+                                                            <button onClick={() => handleEditPoll(p)} className="p-1.5 bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-400 rounded-md transition-colors">
+                                                                <Edit2 size={14} />
+                                                            </button>
+                                                            <button onClick={() => handleDeletePoll(p.id)} className="p-1.5 bg-rose-500/20 hover:bg-rose-500/40 text-rose-400 rounded-md transition-colors">
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </div>
+                                                        <div className="flex justify-between items-start gap-2 pr-16">
+                                                            <h4 className="font-bold text-slate-200 text-sm">{p.question}</h4>
+                                                            {p.isMultipleChoice && <span className="text-[10px] bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full border border-indigo-500/30 shrink-0">Multi</span>}
+                                                        </div>
                                                         <div className="text-xs text-slate-500 flex flex-wrap gap-1">
                                                             {p.options.map((o: string, i: number) => <span key={i} className="bg-white/5 px-2 py-0.5 rounded-md">{o}</span>)}
                                                         </div>

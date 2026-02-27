@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { db, ensureAuth } from '../lib/firebase';
-import { doc, onSnapshot, setDoc, getDoc, collection, addDoc, query, orderBy, limit, updateDoc, increment } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, collection, addDoc, query, orderBy, limit, increment } from 'firebase/firestore';
 import { CheckCircle, Send, User } from 'lucide-react';
 
 export default function StudentView() {
@@ -14,6 +14,7 @@ export default function StudentView() {
     const [messages, setMessages] = useState<any[]>([]);
     const [chatInput, setChatInput] = useState('');
     const [hasVoted, setHasVoted] = useState(false);
+    const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Entry Gate
@@ -61,25 +62,7 @@ export default function StudentView() {
 
             unsubClass = onSnapshot(doc(db, 'classrooms', classroomId), (snap) => {
                 if (snap.exists()) {
-                    const data = snap.data();
-                    setClassroom(data);
-
-                    // If entered & active & voting, fetch the poll details
-                    if (isEntered && uid && data.status === 'voting' && data.activePollId) {
-                        getDoc(doc(db, `classrooms/${classroomId}/polls/${data.activePollId}`)).then(pSnap => {
-                            if (pSnap.exists()) {
-                                setPoll({ id: pSnap.id, ...pSnap.data() });
-                            }
-                        });
-
-                        // Check if already voted
-                        getDoc(doc(db, `classrooms/${classroomId}/polls/${data.activePollId}/votes/${uid}`)).then(vSnap => {
-                            setHasVoted(vSnap.exists());
-                        });
-                    } else {
-                        setPoll(null);
-                        setHasVoted(false);
-                    }
+                    setClassroom(snap.data());
                 }
             });
 
@@ -99,6 +82,46 @@ export default function StudentView() {
         return () => { unsubClass(); unsubChat(); };
     }, [isEntered, classroomId, uid]);
 
+    // Poll listener (depends on activePollId)
+    useEffect(() => {
+        if (!classroomId || !classroom?.activePollId || !isEntered || !uid || classroom.status !== 'voting') {
+            if (classroom?.status !== 'locked') {
+                setPoll(null);
+            }
+            return;
+        }
+
+        const pollRef = doc(db, `classrooms/${classroomId}/polls/${classroom.activePollId}`);
+        const unsubPoll = onSnapshot(pollRef, (snap) => {
+            if (snap.exists()) {
+                setPoll({ id: snap.id, ...snap.data() });
+            } else {
+                setPoll(null);
+            }
+        });
+
+        return () => unsubPoll();
+    }, [classroomId, classroom?.activePollId, classroom?.status, isEntered, uid]);
+
+    // Vote state listener (depends on activePollId and uid)
+    useEffect(() => {
+        if (!classroomId || !classroom?.activePollId || !uid) {
+            setHasVoted(false);
+            setSelectedOptions([]);
+            return;
+        }
+
+        const voteRef = doc(db, `classrooms/${classroomId}/polls/${classroom.activePollId}/votes/${uid}`);
+        const unsubVote = onSnapshot(voteRef, (snap) => {
+            setHasVoted(snap.exists());
+            if (!snap.exists()) {
+                setSelectedOptions([]);
+            }
+        });
+
+        return () => unsubVote();
+    }, [classroomId, classroom?.activePollId, uid]);
+
     // Chat
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -114,18 +137,19 @@ export default function StudentView() {
                 text: msg,
                 timestamp: Date.now()
             });
-            // Track message count on attendee doc
-            await updateDoc(doc(db, `classrooms/${classroomId}/attendees/${uid}`), {
+            // Track message count on attendee doc safely
+            await setDoc(doc(db, `classrooms/${classroomId}/attendees/${uid}`), {
                 messageCount: increment(1)
-            });
+            }, { merge: true });
         } catch (err) {
             console.error("Message send failed", err);
         }
     };
 
     // Voting
-    const handleVote = async (optionIndex: number) => {
-        if (!classroomId || !poll || !uid || hasVoted) return;
+    const handleVote = async (options: number[] | number) => {
+        const optionArray = Array.isArray(options) ? options : [options];
+        if (!classroomId || !poll || !uid || hasVoted || optionArray.length === 0) return;
 
         setHasVoted(true);
         try {
@@ -133,24 +157,27 @@ export default function StudentView() {
             await setDoc(doc(db, `classrooms/${classroomId}/polls/${poll.id}/votes/${uid}`), {
                 uid,
                 voterName: fullName,
-                selectedOption: optionIndex,
+                selectedOption: poll.isMultipleChoice ? optionArray : optionArray[0],
                 timestamp: Date.now()
             });
 
             // Stream event for ParticleCanvas
-            await setDoc(doc(db, `streams/${poll.id}/events/${uid}`), {
-                optionId: optionIndex.toString(),
-                timestamp: Date.now()
-            });
+            await Promise.all(optionArray.map(optIdx =>
+                setDoc(doc(db, `streams/${poll.id}/events/${uid}_${optIdx}`), {
+                    optionId: optIdx.toString(),
+                    timestamp: Date.now()
+                })
+            ));
 
-            // Track vote count on attendee doc
-            await updateDoc(doc(db, `classrooms/${classroomId}/attendees/${uid}`), {
+            // Track vote count on attendee doc safely
+            await setDoc(doc(db, `classrooms/${classroomId}/attendees/${uid}`), {
                 voteCount: increment(1)
-            });
+            }, { merge: true });
 
-        } catch (err) {
+        } catch (err: any) {
             console.error('Vote failed', err);
             setHasVoted(false);
+            alert(`Vote failed: ${err.message || 'Unknown error'}`);
         }
     };
 
@@ -228,23 +255,44 @@ export default function StudentView() {
                         <p className="text-slate-400 text-lg">Look at the classroom screen.</p>
                     </div>
                 ) : (
-                    <div className="flex-1 flex flex-col gap-4 animate-slide-up relative z-10">
-                        {poll.options.map((opt: string, idx: number) => (
-                            <button
-                                key={idx}
-                                onClick={() => handleVote(idx)}
-                                disabled={isLocked}
-                                className={`glass-panel w-full p-6 text-left relative overflow-hidden group transition-all duration-300 ${isLocked ? 'opacity-50 cursor-not-allowed' : 'hover:-translate-y-1 hover:shadow-[0_8px_30px_rgba(99,102,241,0.2)] hover:border-indigo-500/50'}`}
-                            >
-                                <div className="absolute inset-0 bg-indigo-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                <div className="flex items-center gap-4 relative z-10">
-                                    <div className="flex items-center justify-center w-10 h-10 rounded-full bg-slate-800 text-slate-300 font-bold shrink-0 shadow-inner group-hover:bg-indigo-500 group-hover:text-white transition-colors">
-                                        {String.fromCharCode(65 + idx)}
+                    <div className="flex-1 flex flex-col gap-4 animate-slide-up relative z-10 pb-24">
+                        {poll.options.map((opt: string, idx: number) => {
+                            const isSelected = selectedOptions.includes(idx);
+                            return (
+                                <button
+                                    key={idx}
+                                    onClick={() => {
+                                        if (isLocked) return;
+                                        if (poll.isMultipleChoice) {
+                                            setSelectedOptions(prev => prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]);
+                                        } else {
+                                            handleVote(idx);
+                                        }
+                                    }}
+                                    disabled={isLocked}
+                                    className={`glass-panel w-full p-6 text-left relative overflow-hidden group transition-all duration-300 ${isLocked ? 'opacity-50 cursor-not-allowed' : 'hover:-translate-y-1 hover:shadow-[0_8px_30px_rgba(99,102,241,0.2)] hover:border-indigo-500/50'} ${isSelected ? 'border-indigo-500/80 shadow-[0_0_20px_rgba(99,102,241,0.3)] bg-indigo-500/10' : ''}`}
+                                >
+                                    <div className={`absolute inset-0 bg-indigo-500/10 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
+                                    <div className="flex items-center gap-4 relative z-10">
+                                        <div className={`flex items-center justify-center w-10 h-10 rounded-full font-bold shrink-0 shadow-inner transition-colors ${isSelected ? 'bg-indigo-500 text-white' : 'bg-slate-800 text-slate-300 group-hover:bg-indigo-500 group-hover:text-white'}`}>
+                                            {poll.isMultipleChoice && isSelected ? <CheckCircle size={20} /> : String.fromCharCode(65 + idx)}
+                                        </div>
+                                        <span className={`text-xl font-bold transition-colors ${isSelected ? 'text-white' : 'text-slate-100 group-hover:text-white'}`}>{opt}</span>
                                     </div>
-                                    <span className="text-xl font-bold group-hover:text-white transition-colors text-slate-100">{opt}</span>
-                                </div>
-                            </button>
-                        ))}
+                                </button>
+                            );
+                        })}
+                        {poll.isMultipleChoice && (
+                            <div className="fixed bottom-0 left-0 right-0 p-4 bg-slate-950/80 backdrop-blur-md flex justify-center border-t border-white/10 z-20">
+                                <button
+                                    onClick={() => handleVote(selectedOptions)}
+                                    disabled={isLocked || selectedOptions.length === 0}
+                                    className="w-full max-w-md py-4 rounded-xl bg-indigo-500 text-white font-bold text-lg hover:bg-indigo-600 transition-colors disabled:opacity-50 shadow-lg shadow-indigo-500/30 flex justify-center items-center gap-2"
+                                >
+                                    <Send size={20} /> Submit Vote
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
