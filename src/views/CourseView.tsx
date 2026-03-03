@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { db, ensureAuth } from '../lib/firebase';
 import { doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { Plus, Trash2, ArrowLeft, Users, MonitorPlay, BarChart2 } from 'lucide-react';
+import { Plus, Trash2, ArrowLeft, Users, MonitorPlay, BarChart2, Download } from 'lucide-react';
 import PackedBubbleChart from '../components/PackedBubbleChart';
 import { cn } from '../lib/utils';
 
@@ -14,11 +14,104 @@ export default function CourseView() {
     const [course, setCourse] = useState<any>(null);
     const [classrooms, setClassrooms] = useState<any[]>([]);
     const [allMessages, setAllMessages] = useState<any[]>([]);
+    const [allAttendeesData, setAllAttendeesData] = useState<any[]>([]);
     const [title, setTitle] = useState('');
     const [loading, setLoading] = useState(false);
     const [fetching, setFetching] = useState(true);
     const [activeTab, setActiveTab] = useState<'classrooms' | 'analytics'>('classrooms');
     const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+    const [isExportingGrades, setIsExportingGrades] = useState(false);
+
+    // ─── Semester Final Grade Export ───────────────────────────────────────────
+    const handleExportGrades = async () => {
+        if (!courseId || classrooms.length === 0) return;
+        setIsExportingGrades(true);
+        try {
+            // 1. Total course polls = sum of totalPollsCount across all classrooms
+            const totalCoursePolls = classrooms.reduce(
+                (sum: number, cr: any) => sum + (cr.totalPollsCount || 0), 0
+            );
+
+            // 2. Fetch attendees from every classroom concurrently
+            const studentMap: Record<string, {
+                name: string;
+                totalVotes: number;
+                totalMessages: number;
+                totalSpotlights: number;
+            }> = {};
+
+            await Promise.all(classrooms.map(async (cr: any) => {
+                const attendeesSnap = await getDocs(
+                    collection(db, `classrooms/${cr.id}/attendees`)
+                );
+                attendeesSnap.docs.forEach(d => {
+                    const data = d.data();
+                    const uid = d.id;
+                    if (!studentMap[uid]) {
+                        studentMap[uid] = {
+                            name: data.fullName || 'Unknown',
+                            totalVotes: 0,
+                            totalMessages: 0,
+                            totalSpotlights: 0,
+                        };
+                    }
+                    studentMap[uid].totalVotes += (data.voteCount || 0);
+                    studentMap[uid].totalMessages += (data.messageCount || 0);
+                    studentMap[uid].totalSpotlights += (data.spotlightCount || 0);
+                    if (data.fullName) studentMap[uid].name = data.fullName;
+                });
+            }));
+
+            // 3. Apply scoring formula (100-point scale)
+            const rows = Object.values(studentMap).map(s => {
+                const focusScore = totalCoursePolls === 0 ? 60
+                    : Math.min((s.totalVotes / totalCoursePolls) * 60, 60);
+                const participationScore = Math.min(s.totalMessages, 20);
+                const spotlightScore = Math.min(s.totalSpotlights * 4, 20);
+                const finalGrade = Math.round(focusScore + participationScore + spotlightScore);
+                return { ...s, totalCoursePolls, finalGrade };
+            }).sort((a, b) => b.finalGrade - a.finalGrade);
+
+            // 4. Generate CSV (UTF-8 BOM for Excel compatibility)
+            const headers = [
+                'Student Name',
+                'Total Votes Cast',
+                'Total Course Polls',
+                'Total Messages',
+                'Total Spotlights',
+                'Final Grade (100)',
+            ];
+            const csvContent = [
+                headers.join(','),
+                ...rows.map(r => [
+                    `"${r.name}"`,
+                    r.totalVotes,
+                    r.totalCoursePolls,
+                    r.totalMessages,
+                    r.totalSpotlights,
+                    r.finalGrade,
+                ].join(','))
+            ].join('\n');
+
+            // 5. Trigger browser download
+            const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const date = new Date().toISOString().slice(0, 10);
+            a.href = url;
+            a.download = `PawClass_FinalGrades_${course?.title || courseId}_${date}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Grade export failed', err);
+            alert('CSV export failed. Please try again.');
+        } finally {
+            setIsExportingGrades(false);
+        }
+    };
+    // ────────────────────────────────────────────────────────────────────────────
 
     useEffect(() => {
         if (!courseId) return;
@@ -45,46 +138,81 @@ export default function CourseView() {
         fetchData();
     }, [courseId]);
 
-    // Fetch analytical data on demand
+    // Fetch analytical data on demand (messages + attendees, both in parallel)
     useEffect(() => {
         if (activeTab === 'analytics' && classrooms.length > 0 && allMessages.length === 0) {
-            const fetchAllMessages = async () => {
+            const fetchAnalytics = async () => {
                 setLoadingAnalytics(true);
-                let msgs: any[] = [];
-                for (const cr of classrooms) {
-                    const mSnap = await getDocs(collection(db, `classrooms/${cr.id}/messages`));
-                    mSnap.docs.forEach(d => {
-                        msgs.push({ id: d.id, classroomTitle: cr.title, ...d.data() });
-                    });
+                try {
+                    const [msgsArrays, attendeesArrays] = await Promise.all([
+                        Promise.all(classrooms.map(async (cr: any) => {
+                            const snap = await getDocs(collection(db, `classrooms/${cr.id}/messages`));
+                            return snap.docs.map(d => ({ id: d.id, classroomTitle: cr.title, ...d.data() }));
+                        })),
+                        Promise.all(classrooms.map(async (cr: any) => {
+                            const snap = await getDocs(collection(db, `classrooms/${cr.id}/attendees`));
+                            return snap.docs.map(d => ({ uid: d.id, classroomId: cr.id, ...d.data() }));
+                        }))
+                    ]);
+                    setAllMessages(msgsArrays.flat());
+                    setAllAttendeesData(attendeesArrays.flat());
+                } catch (err) {
+                    console.error('Analytics fetch failed', err);
+                } finally {
+                    setLoadingAnalytics(false);
                 }
-                setAllMessages(msgs);
-                setLoadingAnalytics(false);
             };
-            fetchAllMessages();
+            fetchAnalytics();
         }
     }, [activeTab, classrooms, allMessages.length]);
 
     const statData = useMemo(() => {
-        const stats: Record<string, { id: string, name: string, value: number, messages: any[], messageCount: number, voteCount: number, spotlightCount: number, pollParticipationRate: number }> = {};
+        // Total polls this course — used to compute Immersion % (X-axis of Energy Map)
+        const totalCoursePolls = classrooms.reduce(
+            (sum: number, cr: any) => sum + (cr.totalPollsCount || 0), 0
+        );
+
+        // --- Aggregate attendee stats (votes, spotlights) by uid ---
+        const attendeeAgg: Record<string, { name: string; voteCount: number; spotlightCount: number }> = {};
+        allAttendeesData.forEach(a => {
+            if (!attendeeAgg[a.uid]) {
+                attendeeAgg[a.uid] = { name: a.fullName || '', voteCount: 0, spotlightCount: 0 };
+            }
+            attendeeAgg[a.uid].voteCount += (a.voteCount || 0);
+            attendeeAgg[a.uid].spotlightCount += (a.spotlightCount || 0);
+            if (a.fullName) attendeeAgg[a.uid].name = a.fullName;
+        });
+
+        // --- Build message stats ---
+        const stats: Record<string, { id: string; name: string; value: number; messages: any[]; messageCount: number; voteCount: number; spotlightCount: number; pollParticipationRate: number }> = {};
         allMessages.forEach(m => {
             if (!stats[m.uid]) {
                 stats[m.uid] = {
-                    id: m.uid,
-                    name: m.senderName,
-                    value: 0,
-                    messages: [],
-                    messageCount: 0,
-                    voteCount: 0,
-                    spotlightCount: 0,
-                    pollParticipationRate: 0
+                    id: m.uid, name: m.senderName, value: 0,
+                    messages: [], messageCount: 0, voteCount: 0, spotlightCount: 0, pollParticipationRate: 0
                 };
             }
             stats[m.uid].value += 1;
             stats[m.uid].messageCount += 1;
             stats[m.uid].messages.push(m);
         });
+
+        // --- Also include students who voted/were spotlighted but never sent a message ---
+        Object.entries(attendeeAgg).forEach(([uid, agg]) => {
+            if (!stats[uid]) {
+                stats[uid] = { id: uid, name: agg.name, value: 0, messages: [], messageCount: 0, voteCount: 0, spotlightCount: 0, pollParticipationRate: 0 };
+            }
+            // Merge vote and spotlight counts from attendees (ground truth)
+            stats[uid].voteCount = agg.voteCount;
+            stats[uid].spotlightCount = agg.spotlightCount;
+            // pollParticipationRate drives the X-axis (Immersion) on the Energy Map
+            stats[uid].pollParticipationRate = totalCoursePolls > 0
+                ? Math.min((agg.voteCount / totalCoursePolls) * 100, 100)
+                : 0;
+        });
+
         return Object.values(stats);
-    }, [allMessages]);
+    }, [allMessages, allAttendeesData, classrooms]);
 
     const handleCreateClassroom = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -216,8 +344,20 @@ export default function CourseView() {
                         </>
                     ) : (
                         <div className="animate-fade-in mt-8">
-                            <h3 className="text-2xl font-black mb-2 text-slate-200">Total Course Engagement</h3>
-                            <p className="text-slate-400 mb-8">Aggregated activity across all {classrooms.length} classrooms.</p>
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
+                                <div>
+                                    <h3 className="text-2xl font-black text-slate-200">Total Course Engagement</h3>
+                                    <p className="text-slate-400">Aggregated activity across all {classrooms.length} classrooms.</p>
+                                </div>
+                                <button
+                                    onClick={handleExportGrades}
+                                    disabled={isExportingGrades || classrooms.length === 0}
+                                    className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 hover:border-emerald-500/50 transition-all disabled:opacity-50 shrink-0 shadow-lg shadow-emerald-500/10"
+                                >
+                                    <Download size={18} />
+                                    {isExportingGrades ? 'Generating...' : '📥 匯出期末成績 (CSV)'}
+                                </button>
+                            </div>
 
                             {loadingAnalytics ? (
                                 <div className="glass-panel h-[500px] flex items-center justify-center">

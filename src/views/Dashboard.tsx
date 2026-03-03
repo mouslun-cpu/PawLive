@@ -6,6 +6,10 @@ import { Trash2, Library, Lock, ChevronRight } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).substring(2, 8);
 
+// Stable Firestore document that acts as the single source of truth
+// for the teacher's course list — works across ALL devices and browsers.
+const TEACHER_DOC_ID = 'pawlive_teacher';
+
 export default function Dashboard() {
     const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem('pawlive_admin_auth') === '1004');
     const [passwordInput, setPasswordInput] = useState('');
@@ -19,8 +23,10 @@ export default function Dashboard() {
         const fetchCourses = async () => {
             try {
                 await ensureAuth();
-                const ids: string[] = JSON.parse(localStorage.getItem('pawlive_my_courses') || '[]');
-                const cList = [];
+                // Read course IDs from Firestore (shared across all devices)
+                const teacherSnap = await getDoc(doc(db, 'teachers', TEACHER_DOC_ID));
+                const ids: string[] = teacherSnap.exists() ? (teacherSnap.data().courseIds || []) : [];
+                const cList: any[] = [];
                 for (let i = ids.length - 1; i >= 0; i--) {
                     const snap = await getDoc(doc(db, 'courses', ids[i]));
                     if (snap.exists()) {
@@ -52,10 +58,13 @@ export default function Dashboard() {
                 createdAt: Date.now()
             });
 
-            const ids: string[] = JSON.parse(localStorage.getItem('pawlive_my_courses') || '[]');
-            if (!ids.includes(courseId)) {
-                ids.push(courseId);
-                localStorage.setItem('pawlive_my_courses', JSON.stringify(ids));
+            // Persist course ID in the shared Firestore teacher document
+            // so any device can retrieve the full course list.
+            const teacherRef = doc(db, 'teachers', TEACHER_DOC_ID);
+            const teacherSnap = await getDoc(teacherRef);
+            const existingIds: string[] = teacherSnap.exists() ? (teacherSnap.data().courseIds || []) : [];
+            if (!existingIds.includes(courseId)) {
+                await setDoc(teacherRef, { courseIds: [...existingIds, courseId] }, { merge: true });
             }
 
             navigate(`/course/${courseId}`);
@@ -74,11 +83,15 @@ export default function Dashboard() {
         try {
             await ensureAuth();
             await deleteDoc(doc(db, 'courses', id));
-            // Note: Cloud function or manual cascading delete for classrooms/messages could be handled here in a real app.
 
-            const ids: string[] = JSON.parse(localStorage.getItem('pawlive_my_courses') || '[]');
-            const newIds = ids.filter(cId => cId !== id);
-            localStorage.setItem('pawlive_my_courses', JSON.stringify(newIds));
+            // Remove from the shared Firestore teacher document
+            const teacherRef = doc(db, 'teachers', TEACHER_DOC_ID);
+            const teacherSnap = await getDoc(teacherRef);
+            if (teacherSnap.exists()) {
+                const existingIds: string[] = teacherSnap.data().courseIds || [];
+                await setDoc(teacherRef, { courseIds: existingIds.filter((cId: string) => cId !== id) }, { merge: true });
+            }
+
             setCourses(prev => prev.filter(c => c.id !== id));
         } catch (error) {
             console.error('Failed to delete course', error);
@@ -131,7 +144,7 @@ export default function Dashboard() {
                         <h1 className="bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-5xl md:text-6xl font-black text-transparent mb-4 tracking-tight">
                             PawLive
                         </h1>
-                        <p className="text-slate-400 text-lg">Interactive Learning & Analytics</p>
+                        <p className="text-slate-400 text-lg">Interactive Learning &amp; Analytics</p>
                     </div>
 
                     <form onSubmit={handleCreateCourse} className="space-y-8 mt-12">

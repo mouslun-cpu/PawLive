@@ -97,7 +97,6 @@ export default function ClassroomView() {
         const unsubChat = onSnapshot(qChat, (snapshot) => {
             const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
             setMessages(msgs);
-            setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
         });
 
         const qPolls = query(collection(db, `classrooms/${classroomId}/polls`), orderBy('createdAt', 'desc'));
@@ -255,14 +254,14 @@ export default function ClassroomView() {
     const joinUrl = `${window.location.origin}/#/q/${classroomId}`;
 
     return (
-        <div className="bg-slate-950 h-screen font-sans text-slate-50 pt-8 lg:pt-10 px-2 lg:px-6 pb-0 box-border flex flex-col overflow-hidden">
+        <div className="fixed inset-0 bg-slate-950 font-sans text-slate-50 pt-2 px-2 lg:px-6 pb-0 box-border flex flex-col overflow-hidden">
             {/* Safe top padding area + inner card container */}
             <div className="flex-1 w-full bg-slate-900 rounded-t-[2.5rem] border border-white/10 shadow-2xl relative overflow-hidden flex">
 
                 {/* Left Sidebar (25% - 300px~400px) */}
                 <div className="w-[320px] lg:w-[380px] bg-slate-900/40 backdrop-blur-xl border-r border-white/5 flex flex-col z-20 shadow-[-10px_0_30px_rgba(0,0,0,0.5)] shrink-0">
 
-                    <div className="p-6 pt-10 border-b border-white/5 flex flex-col shrink-0 bg-slate-900/60">
+                    <div className="p-6 border-b border-white/5 flex flex-col shrink-0 bg-slate-900/60">
                         <div className="flex w-full gap-2 mb-6">
                             <button
                                 onClick={() => navigate(`/course/${classroom.courseId}`)}
@@ -478,7 +477,7 @@ export default function ClassroomView() {
 
                     {!isPollingMode ? (
                         /* Chat Mode: Huge Live Chat View */
-                        <div className="flex-1 flex flex-col h-full animate-fade-in relative z-10 pt-10 lg:pt-14">
+                        <div className="flex-1 flex flex-col h-full animate-fade-in relative z-10 pt-4 lg:pt-6">
                             {/* Safer Header layout padding from top */}
                             <div className="px-8 lg:px-12 pb-6 shrink-0 flex flex-col justify-between gap-4">
                                 <div>
@@ -517,7 +516,7 @@ export default function ClassroomView() {
                     ) : (
                         /* Polling Mode: Question title + particle canvas + answer cards */
                         activePoll && (
-                            <div className="flex-1 flex flex-col relative z-20 animate-slide-up pb-3 overflow-hidden">
+                            <div className="flex-1 flex flex-col relative z-20 animate-slide-up pt-4 pb-3 overflow-hidden">
                                 {/* Particle canvas - fills all available space between title and cards */}
                                 <ParticleCanvas
                                     options={activePoll.options.map((text: string, idx: number) => ({ id: idx.toString(), text }))}
