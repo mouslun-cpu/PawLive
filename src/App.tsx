@@ -25,7 +25,7 @@ function App() {
         <div className="fixed bottom-2 right-4 text-[10px] md:text-xs text-slate-500/50 z-50 pointer-events-none font-sans text-right">
           © Dr. Huang Wei Lun<br className="md:hidden" />
           <span className="hidden md:inline"> | </span>
-          v26.1.0
+          v26.2.0
         </div>
       </div>
     </Router>
