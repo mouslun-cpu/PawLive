@@ -8,5 +8,3 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 )
-
-// 更新到v26.2.0

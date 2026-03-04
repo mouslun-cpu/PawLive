@@ -216,5 +216,3 @@ export default function Dashboard() {
         </div>
     );
 }
-
-// 更新到v26.2.0

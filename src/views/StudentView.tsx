@@ -355,5 +355,3 @@ export default function StudentView() {
         </div>
     );
 }
-
-// 更新到v26.2.0

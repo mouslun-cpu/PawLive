@@ -142,5 +142,3 @@ export default function ParticleCanvas({ questionId, options, colors, lastResetA
         />
     );
 }
-
-// 更新到v26.2.0

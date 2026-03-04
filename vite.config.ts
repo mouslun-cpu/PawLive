@@ -9,5 +9,3 @@ export default defineConfig({
     host: true,
   }
 })
-
-// 更新到v26.2.0
