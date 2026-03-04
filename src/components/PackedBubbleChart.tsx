@@ -197,3 +197,5 @@ export default function PackedBubbleChart({ data }: { data: EnergyMapData[] }) {
         </div>
     );
 }
+
+// 更新到v26.2.0

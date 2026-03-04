@@ -1,0 +1,29 @@
+﻿commit cb13903ea79b5a44599bd82ee84faab5e49eb697
+Author: wl <mouslun0509@gmail.com>
+Date:   Wed Mar 4 00:23:37 2026 +0800
+
+    chore: bump version to v26.2.0
+
+commit 44e88a8ebbb8cda1b7f7c802eb5f8a14603aea93
+Author: wl <mouslun0509@gmail.com>
+Date:   Wed Mar 4 00:13:21 2026 +0800
+
+    v26.2.0
+
+commit bd78677f9d7520f3d39858804fe9cbab3636065f
+Author: wl <mouslun0509@gmail.com>
+Date:   Fri Feb 27 19:54:14 2026 +0800
+
+    chore: bump version to v26.1.2
+
+commit bb99509fd00bdfd996dad99c83c975e5019de79b
+Author: wl <mouslun0509@gmail.com>
+Date:   Fri Feb 27 19:53:43 2026 +0800
+
+    chore: bump version to v26.1.2
+
+commit 77777c7810d32a4140a91aeca5b7226ca8be6761
+Author: wl <mouslun0509@gmail.com>
+Date:   Thu Feb 26 01:38:52 2026 +0800
+
+    v26.1.1

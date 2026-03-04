@@ -25,3 +25,5 @@ export const ensureAuth = async () => {
   }
   return auth.currentUser;
 };
+
+// 更新到v26.2.0

@@ -71,3 +71,5 @@ export default defineConfig([
   },
 ])
 ```
+
+// 更新到v26.2.0
