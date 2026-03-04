@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { db, ensureAuth } from '../lib/firebase';
 import { doc, onSnapshot, updateDoc, setDoc, collection, query, orderBy, limit, getDocs, deleteDoc, increment } from 'firebase/firestore';
 import { QRCodeSVG } from 'qrcode.react';
-import { ArrowLeft, Play, X, MessageSquare, Plus, Trash2, StopCircle, Maximize2, Copy, Check, PauseCircle, RotateCcw, BarChart2, Power, PowerOff, Users, ListFilter, Edit2 } from 'lucide-react';
+import { ArrowLeft, Play, X, MessageSquare, Plus, Trash2, StopCircle, Maximize2, Copy, Check, PauseCircle, RotateCcw, BarChart2, Power, PowerOff, Users, ListFilter, Edit2, PanelLeftClose, PanelLeft } from 'lucide-react';
 import ParticleCanvas from '../components/ParticleCanvas';
 import PackedBubbleChart from '../components/PackedBubbleChart';
 import type { EnergyMapData } from '../components/PackedBubbleChart';
@@ -23,6 +23,7 @@ export default function ClassroomView() {
     const [messages, setMessages] = useState<any[]>([]);
 
     // UI States
+    const [isSidebarHidden, setIsSidebarHidden] = useState(false);
     const [pollTitle, setPollTitle] = useState('');
     const [pollOptions, setPollOptions] = useState([{ id: generateId(), text: '' }, { id: generateId(), text: '' }]);
     const [isMultipleChoice, setIsMultipleChoice] = useState(false);
@@ -259,7 +260,10 @@ export default function ClassroomView() {
             <div className="flex-1 w-full bg-slate-900 rounded-t-[2.5rem] border border-white/10 shadow-2xl relative overflow-hidden flex">
 
                 {/* Left Sidebar (25% - 300px~400px) */}
-                <div className="w-[320px] lg:w-[380px] bg-slate-900/40 backdrop-blur-xl border-r border-white/5 flex flex-col z-20 shadow-[-10px_0_30px_rgba(0,0,0,0.5)] shrink-0">
+                <div className={cn(
+                    "w-[320px] lg:w-[380px] bg-slate-900/40 backdrop-blur-xl border-r border-white/5 flex flex-col z-20 shadow-[-10px_0_30px_rgba(0,0,0,0.5)] shrink-0 transition-all duration-300",
+                    isSidebarHidden ? "hidden" : "flex"
+                )}>
 
                     <div className="p-6 border-b border-white/5 flex flex-col shrink-0 bg-slate-900/60">
                         <div className="flex w-full gap-2 mb-6">
@@ -479,15 +483,24 @@ export default function ClassroomView() {
                         /* Chat Mode: Huge Live Chat View */
                         <div className="flex-1 flex flex-col h-full animate-fade-in relative z-10 pt-4 lg:pt-6">
                             {/* Safer Header layout padding from top */}
-                            <div className="px-8 lg:px-12 pb-6 shrink-0 flex flex-col justify-between gap-4">
-                                <div>
-                                    <h1 className="text-3xl lg:text-4xl font-black text-slate-200">Main Live Chat</h1>
-                                    <p className="text-slate-500 mt-2">Click any message to focus and enlarge it on the main screen.</p>
+                            <div className="px-4 sm:px-8 lg:px-12 pb-6 shrink-0 flex flex-col justify-between gap-4">
+                                <div className="flex flex-row items-center gap-4">
+                                    <button
+                                        onClick={() => setIsSidebarHidden(!isSidebarHidden)}
+                                        className="p-2 sm:p-2.5 bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 rounded-xl transition-colors shadow-sm border border-white/10 shrink-0"
+                                        title={isSidebarHidden ? "Show Sidebar" : "Hide Sidebar"}
+                                    >
+                                        {isSidebarHidden ? <PanelLeft size={24} /> : <PanelLeftClose size={24} />}
+                                    </button>
+                                    <div className="min-w-0">
+                                        <h1 className="text-xl sm:text-3xl lg:text-4xl font-black text-slate-200 truncate">Main Live Chat</h1>
+                                        <p className="text-xs sm:text-sm text-slate-500 mt-1 sm:mt-2 hidden sm:block">Click any message to focus and enlarge it on the main screen.</p>
+                                    </div>
                                 </div>
                             </div>
-                            <div className="flex-1 overflow-y-auto px-8 lg:px-12 pb-12 space-y-4 custom-scrollbar">
+                            <div className="flex-1 overflow-y-auto px-4 sm:px-8 lg:px-12 pb-12 space-y-4 custom-scrollbar">
                                 {!classIsActive && (
-                                    <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl text-center font-bold mb-6">
+                                    <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl text-center font-bold mb-6 text-sm sm:text-base">
                                         Class is offline! Students cannot enter or send messages.
                                     </div>
                                 )}
@@ -497,17 +510,17 @@ export default function ClassroomView() {
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         onClick={() => { setFocusedMessage(m); handleSpotlight(m); }}
-                                        className="group bg-slate-800/40 hover:bg-indigo-500/10 border border-white/5 hover:border-indigo-500/30 p-6 rounded-2xl cursor-pointer transition-all shadow-sm hover:shadow-lg max-w-4xl"
+                                        className="group bg-slate-800/40 hover:bg-indigo-500/10 border border-white/5 hover:border-indigo-500/30 p-4 sm:p-6 rounded-2xl cursor-pointer transition-all shadow-sm hover:shadow-lg max-w-4xl"
                                     >
-                                        <div className="flex items-center gap-3 mb-2">
-                                            <div className="w-8 h-8 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-xs ring-1 ring-indigo-500/40">
+                                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
+                                            <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-[10px] sm:text-xs ring-1 ring-indigo-500/40 shrink-0">
                                                 {m.senderName.charAt(0).toUpperCase()}
                                             </div>
-                                            <span className="font-bold text-indigo-300 text-lg">{m.senderName}</span>
-                                            <span className="text-sm text-slate-600">{new Date(m.timestamp).toLocaleTimeString()}</span>
-                                            <span className="ml-auto opacity-0 group-hover:opacity-100 text-slate-400 text-xs bg-black/20 px-2 py-1 rounded-md transition-opacity">Click to focus</span>
+                                            <span className="font-bold text-indigo-300 text-sm sm:text-lg break-all">{m.senderName}</span>
+                                            <span className="text-[10px] sm:text-sm text-slate-600 shrink-0">{new Date(m.timestamp).toLocaleTimeString()}</span>
+                                            <span className="w-full sm:w-auto mt-1 sm:mt-0 sm:ml-auto opacity-0 group-hover:opacity-100 text-slate-400 text-[10px] sm:text-xs bg-black/20 px-2 py-1 rounded-md transition-opacity hidden sm:block">Click to focus</span>
                                         </div>
-                                        <div className="text-slate-200 text-xl leading-relaxed">{m.text}</div>
+                                        <div className="text-slate-200 text-base sm:text-xl leading-relaxed break-words whitespace-pre-wrap">{m.text}</div>
                                     </motion.div>
                                 ))}
                                 <div ref={messagesEndRef} />
@@ -517,6 +530,17 @@ export default function ClassroomView() {
                         /* Polling Mode: Question title + particle canvas + answer cards */
                         activePoll && (
                             <div className="flex-1 flex flex-col relative z-20 animate-slide-up pt-4 pb-3 overflow-hidden">
+                                {/* Toggle Sidebar Button */}
+                                <div className="absolute top-4 left-4 lg:top-6 lg:left-6 z-50">
+                                    <button
+                                        onClick={() => setIsSidebarHidden(!isSidebarHidden)}
+                                        className="p-2 sm:p-2.5 bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 rounded-xl transition-colors shadow-sm border border-white/10 backdrop-blur-md"
+                                        title={isSidebarHidden ? "Show Sidebar" : "Hide Sidebar"}
+                                    >
+                                        {isSidebarHidden ? <PanelLeft size={24} /> : <PanelLeftClose size={24} />}
+                                    </button>
+                                </div>
+
                                 {/* Particle canvas - fills all available space between title and cards */}
                                 <ParticleCanvas
                                     options={activePoll.options.map((text: string, idx: number) => ({ id: idx.toString(), text }))}
