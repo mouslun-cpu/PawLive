@@ -37,4 +37,3 @@ h6 {
 .btn-secondary {
   @apply rounded-xl bg-white/10 px-6 py-3 font-semibold text-white transition-all hover:bg-white/20 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
 }
-// 更新到v26.2.0
