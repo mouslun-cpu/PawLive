@@ -38,6 +38,7 @@ export default function CourseView() {
                 totalVotes: number;
                 totalMessages: number;
                 totalSpotlights: number;
+                totalLikesReceived: number;
             }> = {};
 
             await Promise.all(classrooms.map(async (cr: any) => {
@@ -53,11 +54,13 @@ export default function CourseView() {
                             totalVotes: 0,
                             totalMessages: 0,
                             totalSpotlights: 0,
+                            totalLikesReceived: 0,
                         };
                     }
                     studentMap[uid].totalVotes += (data.voteCount || 0);
                     studentMap[uid].totalMessages += (data.messageCount || 0);
                     studentMap[uid].totalSpotlights += (data.spotlightCount || 0);
+                    studentMap[uid].totalLikesReceived += (data.likesReceived || 0);
                     if (data.fullName) studentMap[uid].name = data.fullName;
                 });
             }));
@@ -67,8 +70,8 @@ export default function CourseView() {
                 const focusScore = totalCoursePolls === 0 ? 60
                     : Math.min((s.totalVotes / totalCoursePolls) * 60, 60);
                 const participationScore = Math.min(s.totalMessages, 20);
-                const spotlightScore = Math.min(s.totalSpotlights * 4, 20);
-                const finalGrade = Math.round(focusScore + participationScore + spotlightScore);
+                const qualityScore = Math.min((s.totalSpotlights * 4) + (s.totalLikesReceived * 1), 20);
+                const finalGrade = Math.round(focusScore + participationScore + qualityScore);
                 return { ...s, totalCoursePolls, finalGrade };
             }).sort((a, b) => b.finalGrade - a.finalGrade);
 
@@ -79,6 +82,7 @@ export default function CourseView() {
                 'Total Course Polls',
                 'Total Messages',
                 'Total Spotlights',
+                'Likes Received',
                 'Final Grade (100)',
             ];
             const csvContent = [
@@ -89,6 +93,7 @@ export default function CourseView() {
                     r.totalCoursePolls,
                     r.totalMessages,
                     r.totalSpotlights,
+                    r.totalLikesReceived,
                     r.finalGrade,
                 ].join(','))
             ].join('\n');
@@ -173,23 +178,24 @@ export default function CourseView() {
         );
 
         // --- Aggregate attendee stats (votes, spotlights) by uid ---
-        const attendeeAgg: Record<string, { name: string; voteCount: number; spotlightCount: number }> = {};
+        const attendeeAgg: Record<string, { name: string; voteCount: number; spotlightCount: number; likesReceived: number; }> = {};
         allAttendeesData.forEach(a => {
             if (!attendeeAgg[a.uid]) {
-                attendeeAgg[a.uid] = { name: a.fullName || '', voteCount: 0, spotlightCount: 0 };
+                attendeeAgg[a.uid] = { name: a.fullName || '', voteCount: 0, spotlightCount: 0, likesReceived: 0 };
             }
             attendeeAgg[a.uid].voteCount += (a.voteCount || 0);
             attendeeAgg[a.uid].spotlightCount += (a.spotlightCount || 0);
+            attendeeAgg[a.uid].likesReceived += (a.likesReceived || 0);
             if (a.fullName) attendeeAgg[a.uid].name = a.fullName;
         });
 
         // --- Build message stats ---
-        const stats: Record<string, { id: string; name: string; value: number; messages: any[]; messageCount: number; voteCount: number; spotlightCount: number; pollParticipationRate: number }> = {};
+        const stats: Record<string, { id: string; name: string; value: number; messages: any[]; messageCount: number; voteCount: number; spotlightCount: number; likesReceived: number; pollParticipationRate: number }> = {};
         allMessages.forEach(m => {
             if (!stats[m.uid]) {
                 stats[m.uid] = {
                     id: m.uid, name: m.senderName, value: 0,
-                    messages: [], messageCount: 0, voteCount: 0, spotlightCount: 0, pollParticipationRate: 0
+                    messages: [], messageCount: 0, voteCount: 0, spotlightCount: 0, likesReceived: 0, pollParticipationRate: 0
                 };
             }
             stats[m.uid].value += 1;
@@ -200,11 +206,12 @@ export default function CourseView() {
         // --- Also include students who voted/were spotlighted but never sent a message ---
         Object.entries(attendeeAgg).forEach(([uid, agg]) => {
             if (!stats[uid]) {
-                stats[uid] = { id: uid, name: agg.name, value: 0, messages: [], messageCount: 0, voteCount: 0, spotlightCount: 0, pollParticipationRate: 0 };
+                stats[uid] = { id: uid, name: agg.name, value: 0, messages: [], messageCount: 0, voteCount: 0, spotlightCount: 0, likesReceived: 0, pollParticipationRate: 0 };
             }
             // Merge vote and spotlight counts from attendees (ground truth)
             stats[uid].voteCount = agg.voteCount;
             stats[uid].spotlightCount = agg.spotlightCount;
+            stats[uid].likesReceived = agg.likesReceived;
             // pollParticipationRate drives the X-axis (Immersion) on the Energy Map
             stats[uid].pollParticipationRate = totalCoursePolls > 0
                 ? Math.min((agg.voteCount / totalCoursePolls) * 100, 100)

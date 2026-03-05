@@ -1,11 +1,13 @@
 ﻿import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { db, ensureAuth } from '../lib/firebase';
-import { doc, onSnapshot, updateDoc, setDoc, collection, query, orderBy, limit, getDocs, deleteDoc, increment } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, setDoc, collection, query, orderBy, limit, getDocs, deleteDoc, increment, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { QRCodeSVG } from 'qrcode.react';
-import { ArrowLeft, Play, X, MessageSquare, Plus, Trash2, StopCircle, Maximize2, Copy, Check, PauseCircle, RotateCcw, BarChart2, Power, PowerOff, Users, ListFilter, Edit2, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { ArrowLeft, Play, X, MessageSquare, Plus, Trash2, StopCircle, Maximize2, Copy, Check, PauseCircle, RotateCcw, BarChart2, Power, PowerOff, Users, ListFilter, Edit2, PanelLeftClose, PanelLeft, Heart } from 'lucide-react';
 import ParticleCanvas from '../components/ParticleCanvas';
 import PackedBubbleChart from '../components/PackedBubbleChart';
+import AdventureBar from '../components/AdventureBar';
+import Confetti from 'react-confetti';
 import type { EnergyMapData } from '../components/PackedBubbleChart';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -43,6 +45,9 @@ export default function ClassroomView() {
     const [activePoll, setActivePoll] = useState<any>(null);
     const [pollVotes, setPollVotes] = useState<any>({});
 
+    // Confetti State
+    const [showConfetti, setShowConfetti] = useState(false);
+
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const statData = useMemo((): EnergyMapData[] => {
@@ -59,6 +64,7 @@ export default function ClassroomView() {
             messageCount: a.messageCount || 0,
             voteCount: a.voteCount || 0,
             spotlightCount: a.spotlightCount || 0,
+            likesReceived: a.likesReceived || 0,
             pollParticipationRate: totalPolls > 0 ? Math.min(((a.voteCount || 0) / totalPolls) * 100, 100) : 0,
             messages: messagesByUid[a.id] || [],
         }));
@@ -70,6 +76,14 @@ export default function ClassroomView() {
             if (snap.exists()) {
                 const data = snap.data();
                 setClassroom(data);
+
+                // Monitor Confetti
+                if (data.adventureConfig?.isActive && data.adventureConfig.currentEnergy >= data.adventureConfig.goalEnergy) {
+                    setShowConfetti(true);
+                } else {
+                    setShowConfetti(false);
+                }
+
                 if (data.activePollId) {
                     const pRef = doc(db, `classrooms/${classroomId}/polls/${data.activePollId}`);
                     onSnapshot(pRef, pSnap => {
@@ -209,6 +223,36 @@ export default function ClassroomView() {
         } catch { /* attendee doc may not exist yet */ }
     };
 
+    const handleLike = async (message: any) => {
+        if (!classroomId || !classroom?.isActive) return;
+
+        const teacherUid = 'teacher';
+        const isLiked = message.likedBy?.includes(teacherUid);
+
+        // Optimistic UI
+        setMessages(messages.map(m => {
+            if (m.id === message.id) {
+                const currentLikers = m.likedBy || [];
+                const newLikers = isLiked ? currentLikers.filter((u: string) => u !== teacherUid) : [...currentLikers, teacherUid];
+                return { ...m, likedBy: newLikers, likesCount: (m.likesCount || 0) + (isLiked ? -1 : 1) };
+            }
+            return m;
+        }));
+
+        try {
+            await setDoc(doc(db, `classrooms/${classroomId}/messages/${message.id}`), {
+                likedBy: isLiked ? arrayRemove(teacherUid) : arrayUnion(teacherUid),
+                likesCount: increment(isLiked ? -1 : 1)
+            }, { merge: true });
+
+            await setDoc(doc(db, `classrooms/${classroomId}/attendees/${message.uid}`), {
+                likesReceived: increment(isLiked ? -1 : 1)
+            }, { merge: true });
+        } catch (err) {
+            console.error('Like failed', err);
+        }
+    };
+
     const pausePoll = async () => {
         if (!classroomId) return;
         await updateDoc(doc(db, 'classrooms', classroomId), { status: 'locked' });
@@ -248,6 +292,33 @@ export default function ClassroomView() {
         await updateDoc(doc(db, 'classrooms', classroomId), { status: 'chat', activePollId: null });
     };
 
+    // Adventure Panel Controls
+    const toggleAdventure = async () => {
+        if (!classroomId || !classroom) return;
+        const config = classroom.adventureConfig || { isActive: false, currentEnergy: 0, goalEnergy: 500, mascotType: 'cat', rewardType: 'treasure' };
+        await updateDoc(doc(db, 'classrooms', classroomId), {
+            'adventureConfig.isActive': !config.isActive,
+            'adventureConfig.currentEnergy': config.currentEnergy || 0,
+            'adventureConfig.goalEnergy': config.goalEnergy || 500,
+            'adventureConfig.mascotType': config.mascotType || 'cat',
+            'adventureConfig.rewardType': config.rewardType || 'treasure'
+        });
+    };
+
+    const updateAdventureConfig = async (key: string, value: any) => {
+        if (!classroomId) return;
+        await updateDoc(doc(db, 'classrooms', classroomId), {
+            [`adventureConfig.${key}`]: value
+        });
+    };
+
+    const resetAdventureEnergy = async () => {
+        if (!classroomId || !confirm('Reset energy to 0?')) return;
+        await updateDoc(doc(db, 'classrooms', classroomId), {
+            'adventureConfig.currentEnergy': 0
+        });
+    };
+
     if (!classroom) return <div className="min-h-screen flex items-center justify-center bg-slate-950"><div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div></div>;
 
     const isPollingMode = classroom.status === 'voting' || classroom.status === 'locked';
@@ -256,8 +327,27 @@ export default function ClassroomView() {
 
     return (
         <div className="fixed inset-0 bg-slate-950 font-sans text-slate-50 pt-2 px-2 lg:px-6 pb-0 box-border flex flex-col overflow-hidden">
+            {showConfetti && <Confetti width={window.innerWidth} height={window.innerHeight} recycle={false} numberOfPieces={500} gravity={0.15} className="!fixed !inset-0 !z-[200]" />}
+            {showConfetti && (
+                <div className="fixed inset-0 z-[190] bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-in pointer-events-auto">
+                    <motion.div initial={{ scale: 0.5, y: 50 }} animate={{ scale: 1, y: 0 }} transition={{ type: 'spring', bounce: 0.6 }} className="flex flex-col items-center">
+                        <h1 className="text-5xl lg:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-br from-yellow-300 via-amber-400 to-orange-500 drop-shadow-[0_0_30px_rgba(250,204,21,0.8)] text-center tracking-tighter uppercase">
+                            BOSS DEFEATED!
+                        </h1>
+                        <p className="text-white text-xl lg:text-3xl font-bold mt-4 text-center drop-shadow-md mb-8">挑戰達成！恭喜解鎖獎勵！</p>
+
+                        <button
+                            onClick={resetAdventureEnergy}
+                            className="px-8 py-4 bg-gradient-to-r from-emerald-400 to-emerald-600 hover:from-emerald-500 hover:to-emerald-700 text-white font-black text-xl rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.5)] transition-all hover:scale-105 active:scale-95 border border-emerald-300 flex items-center justify-center gap-2"
+                        >
+                            繼續上課 (重置進度)
+                        </button>
+                    </motion.div>
+                </div>
+            )}
+
             {/* Safe top padding area + inner card container */}
-            <div className="flex-1 w-full bg-slate-900 rounded-t-[2.5rem] border border-white/10 shadow-2xl relative overflow-hidden flex">
+            <div className="flex-1 w-full bg-slate-900 rounded-t-[2.5rem] border border-white/10 shadow-2xl relative overflow-hidden flex flex-col lg:flex-row">
 
                 {/* Left Sidebar (25% - 300px~400px) */}
                 <div className={cn(
@@ -315,7 +405,7 @@ export default function ClassroomView() {
                             <div className="flex flex-col flex-1 min-h-0">
                                 <div className="flex border-b border-white/5 bg-slate-900/40 p-2 shrink-0">
                                     <button onClick={() => { setActiveSidebarTab('create'); setEditingPollId(null); setPollTitle(''); setPollOptions([{ id: generateId(), text: '' }, { id: generateId(), text: '' }]); setIsMultipleChoice(false); }} className={cn("flex-1 py-2 text-sm font-bold rounded-lg transition-colors", activeSidebarTab === 'create' && !editingPollId ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300")}>
-                                        <Plus size={16} className="inline mr-1" /> New Poll
+                                        <Plus size={16} className="inline mr-1" /> Control
                                     </button>
                                     <button onClick={() => setActiveSidebarTab('list')} className={cn("flex-1 py-2 text-sm font-bold rounded-lg transition-colors", activeSidebarTab === 'list' || editingPollId ? "bg-white/10 text-emerald-400" : "text-slate-500 hover:text-slate-300")}>
                                         <ListFilter size={16} className="inline mr-1" /> Saved ({pollsList.length})
@@ -385,6 +475,67 @@ export default function ClassroomView() {
                                                     </button>
                                                 )}
                                             </div>
+
+                                            {/* Adventure Control Panel */}
+                                            <div className="mt-8 pt-6 border-t border-white/10">
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <h3 className="font-bold text-sm text-indigo-300 uppercase tracking-widest">Adventure Mascot</h3>
+                                                    <button
+                                                        onClick={toggleAdventure}
+                                                        className={cn("w-12 h-6 rounded-full transition-colors relative", classroom.adventureConfig?.isActive ? "bg-indigo-500" : "bg-slate-700")}
+                                                    >
+                                                        <div className={cn("w-4 h-4 rounded-full bg-white absolute top-1 transition-transform", classroom.adventureConfig?.isActive ? "translate-x-7" : "translate-x-1")} />
+                                                    </button>
+                                                </div>
+
+                                                <div className={cn("space-y-4 transition-all overflow-hidden", classroom.adventureConfig?.isActive ? "opacity-100 max-h-96" : "opacity-50 max-h-0 pointer-events-none")}>
+                                                    <div>
+                                                        <label className="text-xs text-slate-400 font-bold block mb-1">Goal Energy (Number)</label>
+                                                        <input
+                                                            type="number"
+                                                            value={classroom.adventureConfig?.goalEnergy || 500}
+                                                            onChange={e => updateAdventureConfig('goalEnergy', parseInt(e.target.value) || 500)}
+                                                            className="w-full bg-slate-900/60 border border-white/10 rounded-xl px-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors"
+                                                        />
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <div className="flex-1">
+                                                            <label className="text-xs text-slate-400 font-bold block mb-1">Mascot</label>
+                                                            <select
+                                                                value={classroom.adventureConfig?.mascotType || 'cat'}
+                                                                onChange={e => updateAdventureConfig('mascotType', e.target.value)}
+                                                                className="w-full bg-slate-900/60 border border-white/10 rounded-xl px-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors"
+                                                            >
+                                                                <option value="cat">🐱 Cat</option>
+                                                                <option value="dog">🐶 Dog</option>
+                                                                <option value="hamster">🐹 Hamster</option>
+                                                                <option value="fox">🦊 Fox</option>
+                                                                <option value="rabbit">🐰 Rabbit</option>
+                                                            </select>
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <label className="text-xs text-slate-400 font-bold block mb-1">Reward</label>
+                                                            <select
+                                                                value={classroom.adventureConfig?.rewardType || 'treasure'}
+                                                                onChange={e => updateAdventureConfig('rewardType', e.target.value)}
+                                                                className="w-full bg-slate-900/60 border border-white/10 rounded-xl px-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors"
+                                                            >
+                                                                <option value="treasure">🎁 Treasure</option>
+                                                                <option value="food">🐟 Fish</option>
+                                                                <option value="bone">🦴 Bone</option>
+                                                                <option value="cake">🎂 Cake</option>
+                                                                <option value="cheese">🧀 Cheese</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={resetAdventureEnergy}
+                                                        className="w-full py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-colors mt-2"
+                                                    >
+                                                        Reset Energy to 0
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                     ) : (
                                         <div className="space-y-3">
@@ -442,9 +593,18 @@ export default function ClassroomView() {
                                 </div>
                                 <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar text-sm">
                                     {messages.map(m => (
-                                        <div key={m.id} className="bg-white/5 p-3 rounded-xl border border-white/5">
+                                        <div key={m.id} className={`bg-white/5 p-3 rounded-xl border border-white/5 ${(m.likesCount || 0) >= 5 ? 'ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)] animate-pulse' : ''}`}>
                                             <span className="font-bold text-indigo-400 mr-2">{m.senderName}:</span>
                                             <span className="text-slate-300 break-words">{m.text}</span>
+                                            <div className="flex items-center gap-1 mt-2 justify-start">
+                                                <button
+                                                    onClick={() => handleLike(m)}
+                                                    className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full transition-colors ${m.likedBy?.includes('teacher') ? 'text-rose-400 bg-rose-500/10' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'}`}
+                                                >
+                                                    <Heart size={10} fill={m.likedBy?.includes('teacher') ? 'currentColor' : 'none'} />
+                                                    {(m.likesCount || 0) > 0 && <span>{m.likesCount}</span>}
+                                                </button>
+                                            </div>
                                         </div>
                                     ))}
                                     <div ref={messagesEndRef} />
@@ -473,129 +633,149 @@ export default function ClassroomView() {
                 </div>
 
                 {/* Right Main Area (Expanding) */}
-                <div className="flex-1 relative flex flex-col overflow-hidden bg-slate-900/20">
+                <div className="flex-1 flex flex-col min-w-0 bg-slate-900/20 relative">
                     <div className={cn(
                         "absolute inset-0 transition-opacity duration-1000 -z-10 pointer-events-none",
                         isPollingMode ? "bg-[radial-gradient(ellipse_at_center,rgba(56,31,118,0.4),transparent_60%)]" : "bg-[radial-gradient(ellipse_at_center,rgba(31,76,118,0.2),transparent_60%)]"
                     )} />
 
-                    {!isPollingMode ? (
-                        /* Chat Mode: Huge Live Chat View */
-                        <div className="flex-1 flex flex-col h-full animate-fade-in relative z-10 pt-4 lg:pt-6">
-                            {/* Safer Header layout padding from top */}
-                            <div className="px-4 sm:px-8 lg:px-12 pb-6 shrink-0 flex flex-col justify-between gap-4">
-                                <div className="flex flex-row items-center gap-4">
-                                    <button
-                                        onClick={() => setIsSidebarHidden(!isSidebarHidden)}
-                                        className="p-2 sm:p-2.5 bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 rounded-xl transition-colors shadow-sm border border-white/10 shrink-0"
-                                        title={isSidebarHidden ? "Show Sidebar" : "Hide Sidebar"}
-                                    >
-                                        {isSidebarHidden ? <PanelLeft size={24} /> : <PanelLeftClose size={24} />}
-                                    </button>
-                                    <div className="min-w-0">
-                                        <h1 className="text-xl sm:text-3xl lg:text-4xl font-black text-slate-200 truncate">Main Live Chat</h1>
-                                        <p className="text-xs sm:text-sm text-slate-500 mt-1 sm:mt-2 hidden sm:block">Click any message to focus and enlarge it on the main screen.</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="flex-1 overflow-y-auto px-4 sm:px-8 lg:px-12 pb-12 space-y-4 custom-scrollbar">
-                                {!classIsActive && (
-                                    <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl text-center font-bold mb-6 text-sm sm:text-base">
-                                        Class is offline! Students cannot enter or send messages.
-                                    </div>
-                                )}
-                                {messages.map(m => (
-                                    <motion.div
-                                        key={m.id}
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        onClick={() => { setFocusedMessage(m); handleSpotlight(m); }}
-                                        className="group bg-slate-800/40 hover:bg-indigo-500/10 border border-white/5 hover:border-indigo-500/30 p-4 sm:p-6 rounded-2xl cursor-pointer transition-all shadow-sm hover:shadow-lg max-w-4xl"
-                                    >
-                                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
-                                            <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-[10px] sm:text-xs ring-1 ring-indigo-500/40 shrink-0">
-                                                {m.senderName.charAt(0).toUpperCase()}
-                                            </div>
-                                            <span className="font-bold text-indigo-300 text-sm sm:text-lg break-all">{m.senderName}</span>
-                                            <span className="text-[10px] sm:text-sm text-slate-600 shrink-0">{new Date(m.timestamp).toLocaleTimeString()}</span>
-                                            <span className="w-full sm:w-auto mt-1 sm:mt-0 sm:ml-auto opacity-0 group-hover:opacity-100 text-slate-400 text-[10px] sm:text-xs bg-black/20 px-2 py-1 rounded-md transition-opacity hidden sm:block">Click to focus</span>
+                    {/* Top Adventure Bar (Rendered everywhere) */}
+                    {classroom.adventureConfig?.isActive && (
+                        <AdventureBar config={classroom.adventureConfig} />
+                    )}
+
+                    <div className="flex-1 relative flex flex-col overflow-hidden">
+                        {!isPollingMode ? (
+                            /* Chat Mode: Huge Live Chat View */
+                            <div className="flex-1 flex flex-col h-full animate-fade-in relative z-10 pt-4 lg:pt-6">
+                                {/* Safer Header layout padding from top */}
+                                <div className="px-4 sm:px-8 lg:px-12 pb-6 shrink-0 flex flex-col justify-between gap-4">
+                                    <div className="flex flex-row items-center gap-4">
+                                        <button
+                                            onClick={() => setIsSidebarHidden(!isSidebarHidden)}
+                                            className="p-2 sm:p-2.5 bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 rounded-xl transition-colors shadow-sm border border-white/10 shrink-0"
+                                            title={isSidebarHidden ? "Show Sidebar" : "Hide Sidebar"}
+                                        >
+                                            {isSidebarHidden ? <PanelLeft size={24} /> : <PanelLeftClose size={24} />}
+                                        </button>
+                                        <div className="min-w-0">
+                                            <h1 className="text-xl sm:text-3xl lg:text-4xl font-black text-slate-200 truncate">Main Live Chat</h1>
+                                            <p className="text-xs sm:text-sm text-slate-500 mt-1 sm:mt-2 hidden sm:block">Click any message to focus and enlarge it on the main screen.</p>
                                         </div>
-                                        <div className="text-slate-200 text-base sm:text-xl leading-relaxed break-words whitespace-pre-wrap">{m.text}</div>
-                                    </motion.div>
-                                ))}
-                                <div ref={messagesEndRef} />
-                            </div>
-                        </div>
-                    ) : (
-                        /* Polling Mode: Question title + particle canvas + answer cards */
-                        activePoll && (
-                            <div className="flex-1 flex flex-col relative z-20 animate-slide-up pt-4 pb-3 overflow-hidden">
-                                {/* Toggle Sidebar Button */}
-                                <div className="absolute top-4 left-4 lg:top-6 lg:left-6 z-50">
-                                    <button
-                                        onClick={() => setIsSidebarHidden(!isSidebarHidden)}
-                                        className="p-2 sm:p-2.5 bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 rounded-xl transition-colors shadow-sm border border-white/10 backdrop-blur-md"
-                                        title={isSidebarHidden ? "Show Sidebar" : "Hide Sidebar"}
-                                    >
-                                        {isSidebarHidden ? <PanelLeft size={24} /> : <PanelLeftClose size={24} />}
-                                    </button>
+                                    </div>
                                 </div>
-
-                                {/* Particle canvas - fills all available space between title and cards */}
-                                <ParticleCanvas
-                                    options={activePoll.options.map((text: string, idx: number) => ({ id: idx.toString(), text }))}
-                                    questionId={classroom.activePollId}
-                                    colors={COLORS}
-                                    lastResetAt={activePoll.lastResetAt ?? activePoll.createdAt}
-                                />
-
-                                {/* Bottom section: question title + answer cards — stacked at the bottom */}
-                                <div className="mt-auto px-6 lg:px-10 flex flex-col gap-3 shrink-0">
-                                    {/* Question title - sits directly above cards */}
-                                    <div className="text-center">
-                                        {classroom.status === 'locked' && (
-                                            <div className="inline-flex items-center gap-2 bg-amber-500/20 text-amber-500 px-4 py-1 rounded-full font-bold text-xs border border-amber-500/30 mb-1 animate-pulse">
-                                                <PauseCircle size={14} /> Poll Locked
+                                <div className="flex-1 overflow-y-auto px-4 sm:px-8 lg:px-12 pb-12 space-y-4 custom-scrollbar">
+                                    {!classIsActive && (
+                                        <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl text-center font-bold mb-6 text-sm sm:text-base">
+                                            Class is offline! Students cannot enter or send messages.
+                                        </div>
+                                    )}
+                                    {messages.map(m => (
+                                        <motion.div
+                                            key={m.id}
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            className={`group bg-slate-800/40 hover:bg-indigo-500/10 border border-white/5 hover:border-indigo-500/30 p-4 sm:p-6 rounded-2xl transition-all shadow-sm hover:shadow-lg max-w-4xl ${(m.likesCount || 0) >= 5 ? 'ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)] animate-pulse' : ''}`}
+                                        >
+                                            <div
+                                                className="cursor-pointer"
+                                                onClick={() => { setFocusedMessage(m); handleSpotlight(m); }}
+                                            >
+                                                <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
+                                                    <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-[10px] sm:text-xs ring-1 ring-indigo-500/40 shrink-0">
+                                                        {m.senderName.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    <span className="font-bold text-indigo-300 text-sm sm:text-lg break-all">{m.senderName}</span>
+                                                    <span className="text-[10px] sm:text-sm text-slate-600 shrink-0">{new Date(m.timestamp).toLocaleTimeString()}</span>
+                                                    <span className="w-full sm:w-auto mt-1 sm:mt-0 sm:ml-auto opacity-0 group-hover:opacity-100 text-slate-400 text-[10px] sm:text-xs bg-black/20 px-2 py-1 rounded-md transition-opacity hidden sm:block">Click to focus</span>
+                                                </div>
+                                                <div className="text-slate-200 text-base sm:text-xl leading-relaxed break-words whitespace-pre-wrap">{m.text}</div>
                                             </div>
-                                        )}
-                                        <h1 className="text-2xl lg:text-3xl font-black tracking-tight leading-tight drop-shadow-lg max-w-4xl mx-auto text-white">
-                                            {activePoll.question}
-                                        </h1>
+                                            <div className="flex items-center gap-1 mt-3 justify-start">
+                                                <button
+                                                    onClick={() => handleLike(m)}
+                                                    className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full transition-colors ${m.likedBy?.includes('teacher') ? 'text-rose-400 bg-rose-500/10' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'}`}
+                                                >
+                                                    <Heart size={14} fill={m.likedBy?.includes('teacher') ? 'currentColor' : 'none'} />
+                                                    {(m.likesCount || 0) > 0 && <span className="font-bold">{m.likesCount}</span>}
+                                                </button>
+                                            </div>
+                                        </motion.div>
+                                    ))}
+                                    <div ref={messagesEndRef} />
+                                </div>
+                            </div>
+                        ) : (
+                            /* Polling Mode: Question title + particle canvas + answer cards */
+                            activePoll && (
+                                <div className="flex-1 flex flex-col relative z-20 animate-slide-up pt-4 pb-3 overflow-hidden">
+                                    {/* Toggle Sidebar Button */}
+                                    <div className="absolute top-4 left-4 lg:top-6 lg:left-6 z-50">
+                                        <button
+                                            onClick={() => setIsSidebarHidden(!isSidebarHidden)}
+                                            className="p-2 sm:p-2.5 bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 rounded-xl transition-colors shadow-sm border border-white/10 backdrop-blur-md"
+                                            title={isSidebarHidden ? "Show Sidebar" : "Hide Sidebar"}
+                                        >
+                                            {isSidebarHidden ? <PanelLeft size={24} /> : <PanelLeftClose size={24} />}
+                                        </button>
                                     </div>
 
-                                    {/* Answer cards: 2-col when 2 options (fills evenly), otherwise 3-col grid */}
-                                    <div className={`grid ${activePoll.options.slice(0, 6).length === 2 ? 'grid-cols-2' : 'grid-cols-3'} gap-3 w-full z-30`}>
-                                        {activePoll.options.slice(0, 6).map((optText: string, idx: number) => {
-                                            const count = pollVotes.counts?.[idx] || 0;
-                                            const pct = pollVotes.total > 0 ? Math.round((count / pollVotes.total) * 100) : 0;
-                                            const color = COLORS[idx % COLORS.length];
+                                    {/* Particle canvas - fills all available space between title and cards */}
+                                    <ParticleCanvas
+                                        options={activePoll.options.map((text: string, idx: number) => ({ id: idx.toString(), text }))}
+                                        questionId={classroom.activePollId}
+                                        colors={COLORS}
+                                        lastResetAt={activePoll.lastResetAt ?? activePoll.createdAt}
+                                    />
 
-                                            return (
-                                                <div key={idx} id={`option-card-${idx}`} className="glass-panel overflow-hidden relative flex flex-col border-white/10 shadow-xl" style={{ minHeight: '32vh' }}>
-                                                    <motion.div
-                                                        className="absolute bottom-0 left-0 w-full z-0 opacity-20"
-                                                        style={{ backgroundColor: color }}
-                                                        initial={{ height: '0%' }}
-                                                        animate={{ height: `${pct}%` }}
-                                                        transition={{ type: 'spring', bounce: 0, duration: 1 }}
-                                                    />
-                                                    <div className="p-3 lg:p-4 relative z-10 flex flex-col h-full">
-                                                        <h3 className="text-sm lg:text-base font-bold text-slate-200 line-clamp-2 leading-tight drop-shadow-md">{optText}</h3>
-                                                        <div className="mt-auto flex items-end justify-between pt-2">
-                                                            <div className="flex items-baseline gap-0.5 drop-shadow-lg" style={{ color }}>
-                                                                <span className="text-3xl lg:text-4xl font-black">{pct}</span><span className="text-lg">%</span>
+                                    {/* Bottom section: question title + answer cards — stacked at the bottom */}
+                                    <div className="mt-auto px-6 lg:px-10 flex flex-col gap-3 shrink-0">
+                                        {/* Question title - sits directly above cards */}
+                                        <div className="text-center">
+                                            {classroom.status === 'locked' && (
+                                                <div className="inline-flex items-center gap-2 bg-amber-500/20 text-amber-500 px-4 py-1 rounded-full font-bold text-xs border border-amber-500/30 mb-1 animate-pulse">
+                                                    <PauseCircle size={14} /> Poll Locked
+                                                </div>
+                                            )}
+                                            <h1 className="text-2xl lg:text-3xl font-black tracking-tight leading-tight drop-shadow-lg max-w-4xl mx-auto text-white">
+                                                {activePoll.question}
+                                            </h1>
+                                        </div>
+
+                                        {/* Answer cards: 2-col when 2 options (fills evenly), otherwise 3-col grid */}
+                                        <div className={`grid ${activePoll.options.slice(0, 6).length === 2 ? 'grid-cols-2' : 'grid-cols-3'} gap-3 w-full z-30`}>
+                                            {activePoll.options.slice(0, 6).map((optText: string, idx: number) => {
+                                                const count = pollVotes.counts?.[idx] || 0;
+                                                const pct = pollVotes.total > 0 ? Math.round((count / pollVotes.total) * 100) : 0;
+                                                const color = COLORS[idx % COLORS.length];
+
+                                                return (
+                                                    <div key={idx} id={`option-card-${idx}`} className="glass-panel overflow-hidden relative flex flex-col border-white/10 shadow-xl" style={{ minHeight: '32vh' }}>
+                                                        <motion.div
+                                                            className="absolute bottom-0 left-0 w-full z-0 opacity-20"
+                                                            style={{ backgroundColor: color }}
+                                                            initial={{ height: '0%' }}
+                                                            animate={{ height: `${pct}%` }}
+                                                            transition={{ type: 'spring', bounce: 0, duration: 1 }}
+                                                        />
+                                                        <div className="p-3 lg:p-4 relative z-10 flex flex-col h-full">
+                                                            <h3 className="text-sm lg:text-base font-bold text-slate-200 line-clamp-2 leading-tight drop-shadow-md">{optText}</h3>
+                                                            <div className="mt-auto flex items-end justify-between pt-2">
+                                                                <div className="flex items-baseline gap-0.5 drop-shadow-lg" style={{ color }}>
+                                                                    <span className="text-3xl lg:text-4xl font-black">{pct}</span><span className="text-lg">%</span>
+                                                                </div>
+                                                                <span className="text-slate-400 text-xs font-medium bg-black/30 px-2 py-0.5 rounded-full">{count} votes</span>
                                                             </div>
-                                                            <span className="text-slate-400 text-xs font-medium bg-black/30 px-2 py-0.5 rounded-full">{count} votes</span>
                                                         </div>
                                                     </div>
-                                                </div>
-                                            );
-                                        })}
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        )
-                    )}
+                            )
+                        )}
+                    </div>
                 </div>
             </div>
 

@@ -37,3 +37,18 @@ h6 {
 .btn-secondary {
   @apply rounded-xl bg-white/10 px-6 py-3 font-semibold text-white transition-all hover:bg-white/20 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
 }
+
+@keyframes nitro-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-nitro {
+  animation: nitro-flow 2s linear infinite;
+  background-size: 200% 200%;
+}

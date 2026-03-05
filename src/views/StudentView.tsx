@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { db, ensureAuth } from '../lib/firebase';
-import { doc, onSnapshot, setDoc, collection, addDoc, query, orderBy, limit, increment } from 'firebase/firestore';
-import { CheckCircle, Send, User } from 'lucide-react';
+import { doc, onSnapshot, setDoc, updateDoc, collection, addDoc, query, orderBy, limit, increment, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { CheckCircle, Send, User, Heart } from 'lucide-react';
+import Confetti from 'react-confetti';
+import { motion } from 'framer-motion';
 
 export default function StudentView() {
     const { questionId: classroomId } = useParams<{ questionId: string }>(); // re-used parameter name for classroom
@@ -13,6 +15,9 @@ export default function StudentView() {
     const [poll, setPoll] = useState<any>(null);
     const [messages, setMessages] = useState<any[]>([]);
     const [chatInput, setChatInput] = useState('');
+    // UI State
+    const [activeTab, setActiveTab] = useState<'chat' | 'poll'>('chat');
+    const [showConfetti, setShowConfetti] = useState(false);
     const [hasVoted, setHasVoted] = useState(false);
     const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -62,7 +67,22 @@ export default function StudentView() {
 
             unsubClass = onSnapshot(doc(db, 'classrooms', classroomId), (snap) => {
                 if (snap.exists()) {
-                    setClassroom(snap.data());
+                    const data = snap.data();
+                    setClassroom(data);
+
+                    // Monitor Confetti
+                    if (data.adventureConfig?.isActive && data.adventureConfig.currentEnergy >= data.adventureConfig.goalEnergy) {
+                        setShowConfetti(true);
+                    } else {
+                        setShowConfetti(false);
+                    }
+
+                    // Sync active tab
+                    if (data.status === 'voting' && data.activePollId) {
+                        setActiveTab('poll');
+                    } else {
+                        setActiveTab('chat');
+                    }
                 }
             });
 
@@ -135,14 +155,59 @@ export default function StudentView() {
                 uid,
                 senderName: fullName,
                 text: msg,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                likesCount: 0,
+                likedBy: []
             });
             // Track message count on attendee doc safely
             await setDoc(doc(db, `classrooms/${classroomId}/attendees/${uid}`), {
                 messageCount: increment(1)
             }, { merge: true });
+
+            // Adventure Energy logic
+            if (classroom?.adventureConfig?.isActive) {
+                await updateDoc(doc(db, `classrooms`, classroomId), {
+                    'adventureConfig.currentEnergy': increment(1)
+                });
+            }
         } catch (err) {
             console.error("Message send failed", err);
+        }
+    };
+
+    const handleLike = async (message: any) => {
+        if (!classroomId || !uid || classroom?.isActive === false) return;
+
+        const isLiked = message.likedBy?.includes(uid);
+
+        // Optimistic UI
+        setMessages(messages.map(m => {
+            if (m.id === message.id) {
+                const currentLikers = m.likedBy || [];
+                const newLikers = isLiked ? currentLikers.filter((u: string) => u !== uid) : [...currentLikers, uid];
+                return { ...m, likedBy: newLikers, likesCount: (m.likesCount || 0) + (isLiked ? -1 : 1) };
+            }
+            return m;
+        }));
+
+        try {
+            await setDoc(doc(db, `classrooms/${classroomId}/messages/${message.id}`), {
+                likedBy: isLiked ? arrayRemove(uid) : arrayUnion(uid),
+                likesCount: increment(isLiked ? -1 : 1)
+            }, { merge: true });
+
+            await setDoc(doc(db, `classrooms/${classroomId}/attendees/${message.uid}`), {
+                likesReceived: increment(isLiked ? -1 : 1)
+            }, { merge: true });
+
+            // Adventure Energy logic
+            if (classroom?.adventureConfig?.isActive && !isLiked) {
+                await updateDoc(doc(db, `classrooms`, classroomId), {
+                    'adventureConfig.currentEnergy': increment(1)
+                });
+            }
+        } catch (err) {
+            console.error('Like failed', err);
         }
     };
 
@@ -173,6 +238,13 @@ export default function StudentView() {
             await setDoc(doc(db, `classrooms/${classroomId}/attendees/${uid}`), {
                 voteCount: increment(1)
             }, { merge: true });
+
+            // Adventure Energy logic
+            if (classroom?.adventureConfig?.isActive) {
+                await updateDoc(doc(db, `classrooms`, classroomId), {
+                    'adventureConfig.currentEnergy': increment(5)
+                });
+            }
 
         } catch (err: any) {
             console.error('Vote failed', err);
@@ -299,11 +371,33 @@ export default function StudentView() {
         );
     }
 
+    if (!classroomId || !uid || !classroom || !poll) {
+        // This condition is likely for the initial loading state or if poll is not active.
+        // The previous `if (!classroom)` handles the very first loading.
+    }
+
+    const MASCOTS: Record<string, string> = {
+        cat: '🐱', dog: '🐶', hamster: '🐹', fox: '🦊', rabbit: '🐰'
+    };
+    const mascot = MASCOTS[classroom.adventureConfig?.mascotType || 'cat'] || '🏃';
+
     // Screen 3: Live Chat
     return (
-        <div className="flex flex-col h-screen bg-slate-950 font-sans">
+        <div className="flex flex-col h-screen bg-slate-950 font-sans text-slate-50 relative overflow-hidden">
+            {showConfetti && <Confetti width={window.innerWidth} height={window.innerHeight} recycle={false} numberOfPieces={300} gravity={0.18} className="!fixed !inset-0 !z-[200]" />}
+            {showConfetti && (
+                <div className="fixed inset-0 z-[190] bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center pointer-events-none animate-fade-in">
+                    <motion.div initial={{ scale: 0.5, y: 50 }} animate={{ scale: 1, y: 0 }} transition={{ type: 'spring', bounce: 0.6 }}>
+                        <h1 className="text-4xl sm:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-br from-yellow-300 via-amber-400 to-orange-500 drop-shadow-[0_0_20px_rgba(250,204,21,0.8)] text-center tracking-tighter uppercase px-4">
+                            BOSS DEFEATED!
+                        </h1>
+                        <p className="text-white text-lg sm:text-2xl font-bold mt-4 text-center drop-shadow-md">挑戰達成！恭喜解鎖獎勵！</p>
+                    </motion.div>
+                </div>
+            )}
+
             {/* Header */}
-            <header className="p-4 border-b border-white/5 bg-slate-900/50 backdrop-blur-md flex items-center justify-between z-20 shadow-md">
+            <header className="bg-slate-900 border-b border-indigo-500/30 p-4 shrink-0 shadow-lg relative z-20">
                 <div>
                     <h2 className="font-bold text-slate-200">{classroom.title}</h2>
                     <p className="text-xs text-emerald-400 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live Session</p>
@@ -313,28 +407,115 @@ export default function StudentView() {
                 </div>
             </header>
 
-            {/* Chat Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar flex flex-col pt-6">
-                {messages.length === 0 ? (
-                    <div className="m-auto text-center text-slate-500 opacity-70">
-                        <p>Welcome to the classroom chat!</p>
-                        <p className="text-sm mt-1">Say hi to everyone.</p>
+            {/* Adventure Mini HUD */}
+            {classroom.adventureConfig?.isActive && (
+                <div className="bg-slate-900 border-b border-indigo-500/20 px-4 py-2 flex items-center space-x-3 shrink-0 relative z-20 shadow-md">
+                    <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider shrink-0 w-12 text-center">Class Quest</span>
+                    <div className="flex-1 h-3 bg-slate-900/80 rounded-full relative overflow-hidden border border-indigo-500/30 shadow-inner">
+                        <div
+                            className="absolute top-0 left-0 h-full rounded-full bg-gradient-to-r from-rose-500 via-fuchsia-500 to-indigo-500 animate-nitro transition-all duration-[1500ms] ease-out"
+                            style={{
+                                width: `${Math.min(((classroom.adventureConfig.currentEnergy || 0) / (classroom.adventureConfig.goalEnergy || 500)) * 100, 100)}%`,
+                                boxShadow: '0 0 10px rgba(217, 70, 239, 0.5)'
+                            }}
+                        />
+                    </div>
+                    <motion.div
+                        className="text-lg shrink-0"
+                        animate={{ y: [0, -3, 0] }}
+                        transition={{ repeat: Infinity, duration: 0.5, ease: 'easeInOut' }}
+                    >
+                        {mascot}
+                    </motion.div>
+                    <span className="text-[10px] font-mono text-slate-400 shrink-0 select-none">
+                        {classroom.adventureConfig.currentEnergy}/{classroom.adventureConfig.goalEnergy}
+                    </span>
+                </div>
+            )}
+
+            {/* Main Area */}
+            <main className="flex-1 relative flex flex-col min-h-0 z-10">
+                {activeTab === 'chat' ? (
+                    /* Chat Messages */
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar flex flex-col">
+                        {messages.length === 0 ? (
+                            <div className="m-auto text-center text-slate-500 opacity-70">
+                                <p>Welcome to the classroom chat!</p>
+                                <p className="text-sm mt-1">Say hi to everyone.</p>
+                            </div>
+                        ) : (
+                            messages.map((m) => {
+                                const isMe = m.uid === uid;
+                                return (
+                                    <div key={m.id} className={`flex flex-col max-w-[85%] ${isMe ? 'self-end items-end' : 'self-start items-start'}`}>
+                                        {!isMe && <span className="text-[10px] text-slate-500 mb-1 ml-1">{m.senderName}</span>}
+                                        <div className={`px-4 py-2.5 rounded-2xl ${isMe ? 'bg-indigo-500 text-white rounded-tr-sm' : 'glass-panel text-slate-200 rounded-tl-sm'} ${(m.likesCount || 0) >= 5 ? 'ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)] animate-pulse' : ''}`}>
+                                            {m.text}
+                                        </div>
+                                        <div className={`flex items-center gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                            <button
+                                                onClick={() => handleLike(m)}
+                                                className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full transition-colors ${m.likedBy?.includes(uid) ? 'text-rose-400 bg-rose-500/10' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'}`}
+                                            >
+                                                <Heart size={10} fill={m.likedBy?.includes(uid) ? 'currentColor' : 'none'} />
+                                                {(m.likesCount || 0) > 0 && <span>{m.likesCount}</span>}
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                        <div ref={messagesEndRef} />
                     </div>
                 ) : (
-                    messages.map((m) => {
-                        const isMe = m.uid === uid;
-                        return (
-                            <div key={m.id} className={`flex flex-col max-w-[85%] ${isMe ? 'self-end items-end' : 'self-start items-start'}`}>
-                                {!isMe && <span className="text-[10px] text-slate-500 mb-1 ml-1">{m.senderName}</span>}
-                                <div className={`px-4 py-2.5 rounded-2xl ${isMe ? 'bg-indigo-500 text-white rounded-tr-sm' : 'glass-panel text-slate-200 rounded-tl-sm'}`}>
-                                    {m.text}
+                    <div className="flex-1 flex flex-col min-h-0 bg-slate-900/30">
+                        {hasVoted ? (
+                            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-fade-in">
+                                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", bounce: 0.5 }}>
+                                    <div className="w-24 h-24 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mb-6 ring-4 ring-emerald-500/30">
+                                        <CheckCircle size={48} />
+                                    </div>
+                                </motion.div>
+                                <h2 className="text-3xl font-black text-white mb-3">Vote Submitted!</h2>
+                                <p className="text-slate-400 text-lg">Waiting for teacher to show results...</p>
+                            </div>
+                        ) : (
+                            <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 flex flex-col items-center justify-center">
+                                <div className="w-full max-w-xl mx-auto space-y-4">
+                                    <h2 className="text-2xl sm:text-3xl font-bold text-center mb-8">{poll.title}</h2>
+                                    {poll.options.map((opt: any) => {
+                                        const isSelected = selectedOptions.includes(opt.id);
+                                        return (
+                                            <button
+                                                key={opt.id}
+                                                onClick={() => {
+                                                    if (poll.isMultipleChoice) {
+                                                        setSelectedOptions(prev => prev.includes(opt.id) ? prev.filter(id => id !== opt.id) : [...prev, opt.id]);
+                                                    } else {
+                                                        handleVote(opt.id);
+                                                    }
+                                                }}
+                                                className={`w-full text-left p-4 sm:p-5 rounded-2xl transition-all border-2 text-lg font-medium shadow-sm active:scale-[0.98] ${isSelected ? 'border-indigo-500 bg-indigo-500/20 text-white' : 'border-white/10 bg-slate-800/50 text-slate-300 hover:border-indigo-500/50 hover:bg-slate-800'}`}
+                                            >
+                                                <div className="flex justify-between items-center">
+                                                    <span>{opt.text}</span>
+                                                    {isSelected && <CheckCircle size={20} className="text-indigo-400" />}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+
+                                    {poll.isMultipleChoice && selectedOptions.length > 0 && (
+                                        <motion.button initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} onClick={() => handleVote(selectedOptions)} className="w-full mt-6 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-500/25 transition-all text-lg flex items-center justify-center gap-2">
+                                            <Send size={20} /> Submit Votes
+                                        </motion.button>
+                                    )}
                                 </div>
                             </div>
-                        );
-                    })
+                        )}
+                    </div>
                 )}
-                <div ref={messagesEndRef} />
-            </div>
+            </main>
 
             {/* Chat Input */}
             <div className="p-3 border-t border-white/5 bg-slate-900/80 backdrop-blur-md">
@@ -352,6 +533,6 @@ export default function StudentView() {
                     </button>
                 </form>
             </div>
-        </div>
+        </div >
     );
 }

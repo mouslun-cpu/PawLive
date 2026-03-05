@@ -8,6 +8,8 @@ export interface EnergyMapData {
     messageCount: number;
     voteCount: number;
     spotlightCount: number;
+    likesReceived: number;
+    qualityPoints?: number;
     pollParticipationRate: number; // 0-100
     messages: any[];
 }
@@ -37,13 +39,18 @@ export default function PackedBubbleChart({ data }: { data: EnergyMapData[] }) {
         );
     }
 
-    const maxMsgs = Math.max(...data.map(d => d.messageCount), 1);
-    const maxSpotlight = Math.max(...data.map(d => d.spotlightCount), 1);
+    const dataWithQuality = data.map(d => ({
+        ...d,
+        qualityPoints: (d.spotlightCount * 4) + (d.likesReceived || 0)
+    }));
+
+    const maxMsgs = Math.max(...dataWithQuality.map(d => d.messageCount), 1);
+    const maxQuality = Math.max(...dataWithQuality.map(d => d.qualityPoints), 1);
 
     // Map data values to SVG coordinates
     const cx = (rate: number) => PAD.left + (Math.min(rate, 100) / 100) * CW;
     const cy = (msgs: number) => PAD.top + CH - (Math.min(msgs, maxMsgs) / maxMsgs) * CH;
-    const radius = (spotlight: number) => BASE_R + (spotlight / maxSpotlight) * (MAX_R - BASE_R);
+    const radius = (qualityPoints: number) => BASE_R + (qualityPoints / maxQuality) * (MAX_R - BASE_R);
 
     const xGrids = [25, 50, 75];
     const yGrids = [0.25, 0.5, 0.75];
@@ -111,10 +118,10 @@ export default function PackedBubbleChart({ data }: { data: EnergyMapData[] }) {
                         fontFamily="sans-serif">Activity</text>
 
                     {/* Bubbles */}
-                    {data.map((d, i) => {
+                    {dataWithQuality.map((d, i) => {
                         const bx = cx(d.pollParticipationRate);
                         const by = cy(d.messageCount);
-                        const r = radius(d.spotlightCount);
+                        const r = radius(d.qualityPoints);
                         const color = COLORS[i % COLORS.length];
                         const fontSize = Math.max(10, Math.min(15, r * 0.36));
                         const shortName = d.name.length > 9 ? d.name.substring(0, 9) + '…' : d.name;
@@ -137,11 +144,11 @@ export default function PackedBubbleChart({ data }: { data: EnergyMapData[] }) {
                                     {shortName}
                                 </text>
                                 {/* Spotlight stars (if any) */}
-                                {d.spotlightCount > 0 && (
+                                {Math.floor(d.qualityPoints / 4) > 0 && (
                                     <text x={bx} y={by + r - 12}
                                         textAnchor="middle" dominantBaseline="middle"
                                         fontSize="10" style={{ pointerEvents: 'none', userSelect: 'none' }}>
-                                        {'⭐'.repeat(Math.min(d.spotlightCount, 3))}
+                                        {'⭐'.repeat(Math.min(Math.floor(d.qualityPoints / 4), 3))}
                                     </text>
                                 )}
                             </g>
@@ -170,7 +177,7 @@ export default function PackedBubbleChart({ data }: { data: EnergyMapData[] }) {
                                     <div className="flex gap-4 mt-1.5 text-xs">
                                         <span className="text-indigo-400 font-semibold">💬 {selected.messageCount} msgs</span>
                                         <span className="text-emerald-400 font-semibold">🗳 {Math.round(selected.pollParticipationRate)}% Immersion</span>
-                                        <span className="text-amber-400 font-semibold">⭐ {selected.spotlightCount} Spotlights</span>
+                                        <span className="text-amber-400 font-semibold">⭐ {Math.floor((selected.qualityPoints || 0) / 4)} Stars ({selected.qualityPoints || 0} QP)</span>
                                     </div>
                                 </div>
                                 <button onClick={() => setSelected(null)}
